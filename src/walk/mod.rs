@@ -484,12 +484,12 @@ fn insert_dir_entry(md: &Metadata, p: &PathBuf, all_dirs: &mut Vec<CDirEntry>, p
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashSet, path::PathBuf, str::FromStr};
+    use std::{collections::{HashMap, HashSet}, str::FromStr};
 
-    use super::{get_cwd, walk_iter};
+    use super::{get_cwd, walk_iter, walk_rec, CDirEntry};
 
     #[test]
-    fn one_root_file() {
+    fn one_root_file_iter() {
         let wd = get_cwd();
         
         let path = std::path::PathBuf::from_str(format!("{}/src/walk/test_dir/b", wd.display()).as_str());
@@ -513,7 +513,7 @@ mod tests {
     }
 
     #[test]
-    fn one_root_folder() {
+    fn one_root_folder_iter() {
         let wd = get_cwd();
         
         let path = std::path::PathBuf::from_str(format!("{}/src/walk/test_dir/c", wd.display()).as_str());
@@ -530,7 +530,7 @@ mod tests {
                 assert_eq!(res[0].size_here, 0);
                 assert_eq!(res[0].size_below, 0);
                 
-                let fp = p.join("./a");
+                let fp = p.join("./d");
                 assert_eq!(res[1].p, fp);
                 assert_eq!(res[1].files_here, 0);
                 assert_eq!(res[1].files_below, 0);
@@ -546,7 +546,7 @@ mod tests {
     }
 
     #[test]
-    fn dirs_files_below() {
+    fn dirs_files_below_iter() {
         let wd = get_cwd();
         
         let path = std::path::PathBuf::from_str(format!("{}/src/walk/test_dir/a/e", wd.display()).as_str());
@@ -570,13 +570,126 @@ mod tests {
     }
 
     #[test]
-    fn all_dirs_files_below() {
+    fn all_dirs_files_below_iter() {
         let wd = get_cwd();
 
         let path = std::path::PathBuf::from_str(format!("{}/src/walk/test_dir", wd.display()).as_str());
         match path {
             Ok(p) => {
                 let res = walk_iter(p.clone(), &mut HashSet::new());
+                assert_eq!(res.len(), 8);
+
+                assert_eq!(res[0].p, p);
+                assert_eq!(res[0].files_here, 1);
+                assert_eq!(res[0].files_below, 4);
+                assert_eq!(res[0].dirs_here, 3);
+                assert_eq!(res[0].dirs_below, 4);
+                assert_eq!(res[0].size_here, 12);
+                assert_eq!(res[0].size_below, 8);
+            }
+            Err(e) => {
+                panic!("failed to get path buf: {}", e)
+            }
+        }
+    }
+
+    #[test]
+    fn one_root_file_rec() {
+        let wd = get_cwd();
+        
+        let path = std::path::PathBuf::from_str(format!("{}/src/walk/test_dir/b", wd.display()).as_str());
+        match path {
+            Ok(p) => {
+                let mut res: std::vec::Vec<CDirEntry> = Vec::new();
+                let mut path_map: HashMap<std::path::PathBuf, usize> = HashMap::new();
+                let root: Option<crate::walk::CDirEntry> = walk_rec(p.clone(), &mut res, &mut path_map, &mut HashSet::new(), 0);
+                assert_eq!(res.len(), 1);
+
+                assert_eq!(res[0].p, p);
+                assert_eq!(res[0].files_here, 1);
+                assert_eq!(res[0].files_below, 0);
+                assert_eq!(res[0].dirs_here, 0);
+                assert_eq!(res[0].dirs_below, 0);
+                assert_eq!(res[0].size_here, 4);
+                assert_eq!(res[0].size_below, 0);
+            }
+            Err(e) => {
+                panic!("failed to get path buf: {}", e)
+            }
+        }
+    }
+
+    #[test]
+    fn one_root_folder_rec() {
+        let wd = get_cwd();
+        
+        let path = std::path::PathBuf::from_str(format!("{}/src/walk/test_dir/c", wd.display()).as_str());
+        match path {
+            Ok(p) => {
+                let mut res: std::vec::Vec<CDirEntry> = Vec::new();
+                let mut path_map: HashMap<std::path::PathBuf, usize> = HashMap::new();
+                let root: Option<crate::walk::CDirEntry> = walk_rec(p.clone(), &mut res, &mut path_map, &mut HashSet::new(), 0);
+                assert_eq!(res.len(), 2);
+
+                assert_eq!(res[0].p, p);
+                assert_eq!(res[0].files_here, 0);
+                assert_eq!(res[0].files_below, 0);
+                assert_eq!(res[0].dirs_here, 1);
+                assert_eq!(res[0].dirs_below, 0);
+                assert_eq!(res[0].size_here, 0);
+                assert_eq!(res[0].size_below, 0);
+                
+                let fp = p.join("./d");
+                assert_eq!(res[1].p, fp);
+                assert_eq!(res[1].files_here, 0);
+                assert_eq!(res[1].files_below, 0);
+                assert_eq!(res[1].dirs_here, 0);
+                assert_eq!(res[1].dirs_below, 0);
+                assert_eq!(res[1].size_here, 0);
+                assert_eq!(res[1].size_below, 0);
+            }
+            Err(e) => {
+                panic!("failed to get path buf: {}", e)
+            }
+        }
+    }
+
+    #[test]
+    fn dirs_files_below_rec() {
+        let wd = get_cwd();
+        
+        let path = std::path::PathBuf::from_str(format!("{}/src/walk/test_dir/a/e", wd.display()).as_str());
+        match path {
+            Ok(p) => {
+                let mut res: std::vec::Vec<CDirEntry> = Vec::new();
+                let mut path_map: HashMap<std::path::PathBuf, usize> = HashMap::new();
+                let root: Option<crate::walk::CDirEntry> = walk_rec(p.clone(), &mut res, &mut path_map, &mut HashSet::new(), 0);
+                assert_eq!(res.len(), 3);
+
+                assert_eq!(res[0].p, p);
+                assert_eq!(res[0].files_here, 1);
+                assert_eq!(res[0].files_below, 1);
+                assert_eq!(res[0].dirs_here, 1);
+                assert_eq!(res[0].dirs_below, 1);
+                assert_eq!(res[0].size_here, 0);
+                assert_eq!(res[0].size_below, 3);
+            }
+            Err(e) => {
+                panic!("failed to get path buf: {}", e)
+            }
+        }
+    }
+
+    #[test]
+    fn all_dirs_files_below_rec() {
+        let wd = get_cwd();
+
+        let path = std::path::PathBuf::from_str(format!("{}/src/walk/test_dir", wd.display()).as_str());
+        match path {
+            Ok(p) => {                
+                let mut res: std::vec::Vec<CDirEntry> = Vec::new();
+                let mut path_map: HashMap<std::path::PathBuf, usize> = HashMap::new();
+                let root: Option<crate::walk::CDirEntry> = walk_rec(p.clone(), &mut res, &mut path_map, &mut HashSet::new(), 0);
                 assert_eq!(res.len(), 8);
 
                 assert_eq!(res[0].p, p);
