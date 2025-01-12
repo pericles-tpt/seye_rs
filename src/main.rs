@@ -15,10 +15,6 @@ const HELP_TEXT: &str = "usage: seye [OPTION]... [SCAN TARGET DIRECTORY] [SCAN S
 ------- Basic options -------
 --help      Print usage and this help message and exit.
 ------- Scan options  -------
--m          Specify memory limit, MUST be at least 100MB and of the form [INTEGER][M | G], e.g. 500M
--t          Specify number of threads, MUST be followed by an integer.
--r          Use the recursive algorithm for scanning (rather than the default 'iterative')
-            (WARNING: Mainly for testing, runs slower, uses more memory and can exceed memory limit)
 -p          Show performance statistics after scan";
 
 const MEGABYTE: usize = 1024 * 1024;
@@ -28,7 +24,7 @@ const MIN_MEMORY_LIMIT: usize = 10 * MEGABYTE;
 lazy_static! {
     static ref VALID_COMMAND_OPTIONS: HashMap<&'static str, HashSet<&'static str>> = {
         let mut map = HashMap::new();
-        map.insert("scan", HashSet::from_iter(vec!["-t", "-m", "-p", "-r"]));
+        map.insert("scan", HashSet::from_iter(vec!["-p"]));
         map
     };
 }
@@ -53,11 +49,11 @@ fn main() {
 
             // Get optional params
             // NOTE: memory_limit == 0 -> no limit
-            let mut num_threads = 1;
-            let mut memory_limit: usize = 0;
-            let mut is_recursive = false;
+            // let mut num_threads = 1;
+            // let mut memory_limit: usize = 0;
+            // let mut is_recursive = false;
             let mut show_perf_info = false;
-            let arg_eval_res = eval_optional_args("scan", optional_args, &mut memory_limit, &mut num_threads, &mut show_perf_info, &mut is_recursive);
+            let arg_eval_res = eval_optional_args("scan", optional_args, &mut show_perf_info);
             if arg_eval_res.is_err() {
                 eprintln!("invalid argument provided: {}", arg_eval_res.err().unwrap());
                 return;
@@ -80,10 +76,10 @@ fn main() {
             }
             let output_pb = maybe_output_pb.unwrap();
 
-            println!("Running scan of '{}', with {} threads and a {} memory limit", maybe_target_str, num_threads, get_human_memory_limit(memory_limit));
+            // println!("Running scan of '{}', with {} threads and a {} memory limit", maybe_target_str, num_threads, get_shorthand_memory_limit(memory_limit));
             
             let bef = std::time::Instant::now();
-            scan(target_pb, output_pb, num_threads, memory_limit, is_recursive);
+            scan(target_pb, output_pb);
             if show_perf_info {
                 println!("Scan took: {}ms", bef.elapsed().as_millis())
             }
@@ -108,7 +104,7 @@ fn validate_get_pathbuf(p: &String) -> std::io::Result<PathBuf> {
     return Ok(PathBuf::from(&p));
 }
 
-fn eval_optional_args(cmd: &str, args: Vec<&&String>, memory_limit: &mut usize, num_threads: &mut usize, show_perf_info: &mut bool, is_recursive: &mut bool) -> std::io::Result<()> {    
+fn eval_optional_args(cmd: &str, args: Vec<&&String>, show_perf_info: &mut bool) -> std::io::Result<()> {    
     let mut i = 0;
     while i < args.len() {
         let before_directory_args = i < args.len() - 2;
@@ -126,9 +122,9 @@ fn eval_optional_args(cmd: &str, args: Vec<&&String>, memory_limit: &mut usize, 
                     "-p" => {
                         *show_perf_info = true;
                     }
-                    "-r" => {
-                        *is_recursive = true;
-                    }
+                    // "-r" => {
+                    //     *is_recursive = true;
+                    // }
                     _ => {is_no_val_opt = false;}
                 }
                 if is_no_val_opt {
@@ -141,23 +137,23 @@ fn eval_optional_args(cmd: &str, args: Vec<&&String>, memory_limit: &mut usize, 
                     return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("missing additional argument for '{}' flag", a)));
                 }
                 match a {
-                    "-m" => {
-                        let maybe_memory_limit = get_memory_limit_from_arg(args[i]);
-                        if maybe_memory_limit.is_err() {
-                            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("invalid memory limit argument, {}", maybe_memory_limit.err().unwrap())));
-                        }
-                        *memory_limit = maybe_memory_limit.unwrap();
-                        if *memory_limit < MIN_MEMORY_LIMIT {
-                            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("memory limit too low must be at least {}M", MIN_MEMORY_LIMIT / MEGABYTE)));
-                        }
-                    }
-                    "-t" => {
-                        let maybe_threads: Result<usize, ParseIntError> = args[i].parse();
-                        if maybe_threads.is_err() || maybe_threads.clone().unwrap() < 1 {
-                            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid thread argument, must be a non-negative integer"));
-                        }
-                        *num_threads = maybe_threads.unwrap();
-                    }
+                    // "-m" => {
+                    //     let maybe_memory_limit = get_memory_limit_from_arg(args[i]);
+                    //     if maybe_memory_limit.is_err() {
+                    //         return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("invalid memory limit argument, {}", maybe_memory_limit.err().unwrap())));
+                    //     }
+                    //     *memory_limit = maybe_memory_limit.unwrap();
+                    //     if *memory_limit < MIN_MEMORY_LIMIT {
+                    //         return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("memory limit too low must be at least {}M", MIN_MEMORY_LIMIT / MEGABYTE)));
+                    //     }
+                    // }
+                    // "-t" => {
+                    //     let maybe_threads: Result<usize, ParseIntError> = args[i].parse();
+                    //     if maybe_threads.is_err() || maybe_threads.clone().unwrap() < 1 {
+                    //         return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid thread argument, must be a non-negative integer"));
+                    //     }
+                    //     *num_threads = maybe_threads.unwrap();
+                    // }
                     _ => {
                         if before_directory_args {
                             return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("unimplemented parameter: {}, for command: {}", a, cmd)));
@@ -203,7 +199,7 @@ fn get_memory_limit_from_arg(a: &String) -> std::io::Result<usize> {
     Ok(ret)
 }
 
-fn get_human_memory_limit(amount: usize) -> String {
+fn get_shorthand_memory_limit(amount: usize) -> String {
     if amount == 0 {
         return format!("unlimited");
     }
