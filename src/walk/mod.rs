@@ -492,7 +492,7 @@ mod tests {
     fn one_root_file_iter() {
         let wd = get_cwd();
         
-        let path = std::path::PathBuf::from_str(format!("{}/src/walk/test_dir/b", wd.display()).as_str());
+        let path = std::path::PathBuf::from_str(format!("{}/tests/test_dir/b", wd.display()).as_str());
         match path {
             Ok(p) => {
                 let res = walk_iter(p.clone(), &mut HashSet::new());
@@ -516,7 +516,7 @@ mod tests {
     fn one_root_folder_iter() {
         let wd = get_cwd();
         
-        let path = std::path::PathBuf::from_str(format!("{}/src/walk/test_dir/c", wd.display()).as_str());
+        let path = std::path::PathBuf::from_str(format!("{}/tests/test_dir/c", wd.display()).as_str());
         match path {
             Ok(p) => {
                 let res = walk_iter(p.clone(), &mut HashSet::new());
@@ -549,7 +549,7 @@ mod tests {
     fn dirs_files_below_iter() {
         let wd = get_cwd();
         
-        let path = std::path::PathBuf::from_str(format!("{}/src/walk/test_dir/a/e", wd.display()).as_str());
+        let path = std::path::PathBuf::from_str(format!("{}/tests/test_dir/a/e", wd.display()).as_str());
         match path {
             Ok(p) => {
                 let res = walk_iter(p.clone(), &mut HashSet::new());
@@ -573,7 +573,7 @@ mod tests {
     fn all_dirs_files_below_iter() {
         let wd = get_cwd();
 
-        let path = std::path::PathBuf::from_str(format!("{}/src/walk/test_dir", wd.display()).as_str());
+        let path = std::path::PathBuf::from_str(format!("{}/tests/test_dir", wd.display()).as_str());
         match path {
             Ok(p) => {
                 let res = walk_iter(p.clone(), &mut HashSet::new());
@@ -597,7 +597,7 @@ mod tests {
     fn one_root_file_rec() {
         let wd = get_cwd();
         
-        let path = std::path::PathBuf::from_str(format!("{}/src/walk/test_dir/b", wd.display()).as_str());
+        let path = std::path::PathBuf::from_str(format!("{}/tests/test_dir/b", wd.display()).as_str());
         match path {
             Ok(p) => {
                 let mut res: std::vec::Vec<CDirEntry> = Vec::new();
@@ -623,7 +623,7 @@ mod tests {
     fn one_root_folder_rec() {
         let wd = get_cwd();
         
-        let path = std::path::PathBuf::from_str(format!("{}/src/walk/test_dir/c", wd.display()).as_str());
+        let path = std::path::PathBuf::from_str(format!("{}/tests/test_dir/c", wd.display()).as_str());
         match path {
             Ok(p) => {
                 let mut res: std::vec::Vec<CDirEntry> = Vec::new();
@@ -658,7 +658,7 @@ mod tests {
     fn dirs_files_below_rec() {
         let wd = get_cwd();
         
-        let path = std::path::PathBuf::from_str(format!("{}/src/walk/test_dir/a/e", wd.display()).as_str());
+        let path = std::path::PathBuf::from_str(format!("{}/tests/test_dir/a/e", wd.display()).as_str());
         match path {
             Ok(p) => {
                 let mut res: std::vec::Vec<CDirEntry> = Vec::new();
@@ -684,7 +684,7 @@ mod tests {
     fn all_dirs_files_below_rec() {
         let wd = get_cwd();
 
-        let path = std::path::PathBuf::from_str(format!("{}/src/walk/test_dir", wd.display()).as_str());
+        let path = std::path::PathBuf::from_str(format!("{}/tests/test_dir", wd.display()).as_str());
         match path {
             Ok(p) => {                
                 let mut res: std::vec::Vec<CDirEntry> = Vec::new();
