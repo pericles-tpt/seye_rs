@@ -1,6 +1,7 @@
 mod walk;
 mod save;
 mod scan;
+mod diff;
 
 #[macro_use]
 extern crate lazy_static;
@@ -26,7 +27,7 @@ const MIN_MEMORY_LIMIT: usize = 10 * MEGABYTE;
 lazy_static! {
     static ref VALID_COMMAND_OPTIONS: HashMap<&'static str, HashSet<&'static str>> = {
         let mut map = HashMap::new();
-        map.insert("scan", HashSet::from_iter(vec!["-p"]));
+        map.insert("scan", HashSet::from_iter(vec!["-p", "-md"]));
         map
     };
 }
@@ -63,7 +64,8 @@ fn main() {
             // let mut memory_limit: usize = 0;
             // let mut is_recursive = false;
             let mut show_perf_info = false;
-            let arg_eval_res = eval_optional_args("scan", optional_args, &mut show_perf_info);
+            let mut min_diff_bytes = 0;
+            let arg_eval_res = eval_optional_args("scan", optional_args, &mut show_perf_info, &mut min_diff_bytes);
             if arg_eval_res.is_err() {
                 eprintln!("invalid argument provided: {}", arg_eval_res.err().unwrap());
                 return;
@@ -108,9 +110,17 @@ fn main() {
             }
 
             let bef = std::time::Instant::now();
-            scan(target_pb, output_pb);
-            if show_perf_info {
-                println!("Scan took: {}ms", bef.elapsed().as_millis())
+            let res = scan(target_pb, output_pb, min_diff_bytes);
+            let took = bef.elapsed();
+            match res {
+                Ok(()) => {
+                    if show_perf_info {
+                        println!("Scan took: {}ms", took.as_millis())
+                    }
+                }
+                Err(e) => {
+                    eprintln!("error occured while scanning: {}", e);
+                }
             }
         }
         "--help" => {
@@ -133,7 +143,7 @@ fn validate_get_pathbuf(p: &String) -> std::io::Result<PathBuf> {
     return Ok(PathBuf::from(&p));
 }
 
-fn eval_optional_args(cmd: &str, args: Vec<&&String>, show_perf_info: &mut bool) -> std::io::Result<()> {    
+fn eval_optional_args(cmd: &str, args: Vec<&&String>, show_perf_info: &mut bool, min_diff_bytes: &mut u64) -> std::io::Result<()> {    
     let mut i = 0;
     while i < args.len() {
         let before_directory_args = i < args.len() - 2;
@@ -176,6 +186,19 @@ fn eval_optional_args(cmd: &str, args: Vec<&&String>, show_perf_info: &mut bool)
                     //         return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("memory limit too low must be at least {}M", MIN_MEMORY_LIMIT / MEGABYTE)));
                     //     }
                     // }
+                    "-md" => {
+                        let maybe_min_diff_bytes = get_bytes_from_arg(args[i]);
+                        if maybe_min_diff_bytes.is_err() {
+                            // Try to parse as u64 num bytes
+                            let maybe_min_diff_bytes_raw = args[i].parse::<u64>();
+                            if maybe_min_diff_bytes_raw.is_err() {
+                                return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("invalid min diff bytes argument, failed to parse as shorthand (e.g. 10M, 1G, etc) or raw bytes (e.g. 1000)")));
+                            }
+                            *min_diff_bytes = maybe_min_diff_bytes_raw.unwrap();
+                        } else {
+                            *min_diff_bytes = maybe_min_diff_bytes.unwrap() as u64;
+                        }
+                    }
                     // "-t" => {
                     //     let maybe_threads: Result<usize, ParseIntError> = args[i].parse();
                     //     if maybe_threads.is_err() || maybe_threads.clone().unwrap() < 1 {
@@ -201,7 +224,7 @@ fn eval_optional_args(cmd: &str, args: Vec<&&String>, show_perf_info: &mut bool)
     Ok(())    
 }
 
-fn get_memory_limit_from_arg(a: &String) -> std::io::Result<usize> {
+fn get_bytes_from_arg(a: &String) -> std::io::Result<usize> {
     // Expecting string of the form: 500M, 2G, etc
     let memory_shorthand = a.as_str();
     if memory_shorthand.len() < 2 {

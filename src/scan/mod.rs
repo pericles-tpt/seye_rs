@@ -5,7 +5,7 @@ use crate::{save::{get_chunk_entry_offsets_from_file, get_hash_iteration_count_f
 
 pub const START_VECTOR_BYTES: u64 = 8;
 
-pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf) -> Result<(), Error> {
+pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, min_diff_bytes: u64) -> Result<(), Error> {
     let save_file_data = get_hash_iteration_count_from_file_names(&target_path, output_path.to_path_buf());
     let mut path_to_initial = output_path.clone();
     path_to_initial.push(format!("{}_initial", save_file_data.0));
