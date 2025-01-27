@@ -5,6 +5,8 @@ mod scan;
 #[macro_use]
 extern crate lazy_static;
 
+extern crate libc;
+
 use std::collections::HashSet;
 use std::num::ParseIntError;
 use std::{collections::HashMap, path::PathBuf};
@@ -35,6 +37,14 @@ fn main() {
         eprintln!("no arguments provided, for a list of commands add the --help argument");
         return;
     }
+
+    // Detect if running as sudo, provide some output
+    let is_root = unsafe { libc::geteuid() == 0 };
+    let mut is_root_msg = "NOT ";
+    if is_root {
+        is_root_msg = "";
+    }
+    println!("{}running as ROOT user", is_root_msg);
 
     let cmd = args[1].as_str();
     let params: Vec<_> = args.iter().skip(2).collect();
@@ -74,10 +84,29 @@ fn main() {
                 eprintln!("invalid output scan path provided: {}", maybe_output_pb.err().unwrap());
                 return;
             }
-            let output_pb = maybe_output_pb.unwrap();
+            let mut output_pb = maybe_output_pb.unwrap();
 
             // println!("Running scan of '{}', with {} threads and a {} memory limit", maybe_target_str, num_threads, get_shorthand_memory_limit(memory_limit));
             
+            // Create `su` folder if it doesn't exist
+            let mut su_path = output_pb.clone();
+            su_path.push("su/");
+            let su_exists = std::fs::exists(&su_path);
+            if su_exists.is_err() {
+                eprintln!("failed to check if 'su' path exists: {:?}", su_exists.err());
+                return;
+            }
+            if !su_exists.unwrap() {
+                let res = std::fs::create_dir(&su_path);
+                if res.is_err() {
+                    eprintln!("failed to create 'su' path: {:?}", res.err());
+                    return;
+                }
+            }
+            if is_root {
+                output_pb = su_path;
+            }
+
             let bef = std::time::Instant::now();
             scan(target_pb, output_pb);
             if show_perf_info {
