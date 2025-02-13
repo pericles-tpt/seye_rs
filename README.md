@@ -42,7 +42,7 @@ CONS:
 - Worse performance than storing the entire scans each time, as diffs need to be combined and then added to the initial scan before comparing the initial and current scans
 
 ### Current Performance
-Performance results of an initial `sudo scan` on my home directory as (NOTE: This occurred after some previous scans were run, so some syscall results are likely cached):
+Performance results of an initial `sudo scan` on my home directory (NOTE: This occurred after some previous scans were run, so some syscall results are likely cached):
 ```
 Scanned 1366164 files, 230408 directories in: 3736ms
 ```
