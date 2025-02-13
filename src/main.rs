@@ -2,6 +2,7 @@ mod walk;
 mod save;
 mod scan;
 mod diff;
+mod report;
 
 #[macro_use]
 extern crate lazy_static;
@@ -9,9 +10,9 @@ extern crate lazy_static;
 extern crate libc;
 
 use std::collections::HashSet;
-use std::num::ParseIntError;
 use std::{collections::HashMap, path::PathBuf};
 use std::env;
+use report::report_changes;
 use scan::scan;
 
 const HELP_TEXT: &str = "usage: seye [OPTION]... [SCAN TARGET DIRECTORY] [SCAN SAVE FILE DIRECTORY]
@@ -120,6 +121,60 @@ fn main() {
                 }
                 Err(e) => {
                     eprintln!("error occured while scanning: {}", e);
+                }
+            }
+        }
+        "report" => {
+            if params.len() < 2 {
+                eprintln!("insufficient arguments for `scan`, expected at least [INPUT SCAN PATH] and [OUTPUT SCAN FILE PATH]");
+                return;
+            }
+            let optional_args: Vec<_> = params.iter().collect();
+            let num_args = optional_args.len();
+            
+            // Get input scan path
+            let maybe_target_str = params[num_args - 2];
+            let maybe_target_pb = validate_get_pathbuf(maybe_target_str);
+            if maybe_target_pb.is_err() {
+                eprintln!("invalid target path provided: {}", maybe_target_pb.err().unwrap());
+                return;
+            }
+            let target_pb = maybe_target_pb.unwrap();
+
+            // Get scan output path
+            let maybe_output_pb = validate_get_pathbuf(params[num_args - 1]);
+            if maybe_output_pb.is_err() {
+                eprintln!("invalid output scan path provided: {}", maybe_output_pb.err().unwrap());
+                return;
+            }
+            let mut output_pb = maybe_output_pb.unwrap();
+
+            // println!("Running scan of '{}', with {} threads and a {} memory limit", maybe_target_str, num_threads, get_shorthand_memory_limit(memory_limit));
+            
+            // Create `su` folder if it doesn't exist
+            let mut su_path = output_pb.clone();
+            su_path.push("su/");
+            let su_exists = std::fs::exists(&su_path);
+            if su_exists.is_err() {
+                eprintln!("failed to check if 'su' path exists: {:?}", su_exists.err());
+                return;
+            }
+            if !su_exists.unwrap() {
+                let res = std::fs::create_dir(&su_path);
+                if res.is_err() {
+                    eprintln!("failed to create 'su' path: {:?}", res.err());
+                    return;
+                }
+            }
+            if is_root {
+                output_pb = su_path;
+            }
+            
+            let res = report_changes(target_pb, output_pb);
+            match res {
+                Ok(()) => {}
+                Err(e) => {
+                    eprintln!("error occured while reporting: {}", e);
                 }
             }
         }
