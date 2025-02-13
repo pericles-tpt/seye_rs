@@ -65,7 +65,7 @@ fn main() {
             // let mut memory_limit: usize = 0;
             // let mut is_recursive = false;
             let mut show_perf_info = false;
-            let mut min_diff_bytes = 0;
+            let mut min_diff_bytes: i64 = 0;
             let arg_eval_res = eval_optional_args("scan", optional_args, &mut show_perf_info, &mut min_diff_bytes);
             if arg_eval_res.is_err() {
                 eprintln!("invalid argument provided: {}", arg_eval_res.err().unwrap());
@@ -88,8 +88,6 @@ fn main() {
                 return;
             }
             let mut output_pb = maybe_output_pb.unwrap();
-
-            // println!("Running scan of '{}', with {} threads and a {} memory limit", maybe_target_str, num_threads, get_shorthand_memory_limit(memory_limit));
             
             // Create `su` folder if it doesn't exist
             let mut su_path = output_pb.clone();
@@ -114,9 +112,9 @@ fn main() {
             let res = scan(target_pb, output_pb, min_diff_bytes);
             let took = bef.elapsed();
             match res {
-                Ok(()) => {
+                Ok((num_files, num_dirs)) => {
                     if show_perf_info {
-                        println!("Scan took: {}ms", took.as_millis())
+                        println!("Scanned {} files, {} directories in: {}ms", num_files, num_dirs, took.as_millis())
                     }
                 }
                 Err(e) => {
@@ -198,7 +196,7 @@ fn validate_get_pathbuf(p: &String) -> std::io::Result<PathBuf> {
     return Ok(PathBuf::from(&p));
 }
 
-fn eval_optional_args(cmd: &str, args: Vec<&&String>, show_perf_info: &mut bool, min_diff_bytes: &mut u64) -> std::io::Result<()> {    
+fn eval_optional_args(cmd: &str, args: Vec<&&String>, show_perf_info: &mut bool, min_diff_bytes: &mut i64) -> std::io::Result<()> {    
     let mut i = 0;
     while i < args.len() {
         let before_directory_args = i < args.len() - 2;
@@ -245,13 +243,13 @@ fn eval_optional_args(cmd: &str, args: Vec<&&String>, show_perf_info: &mut bool,
                         let maybe_min_diff_bytes = get_bytes_from_arg(args[i]);
                         if maybe_min_diff_bytes.is_err() {
                             // Try to parse as u64 num bytes
-                            let maybe_min_diff_bytes_raw = args[i].parse::<u64>();
+                            let maybe_min_diff_bytes_raw = args[i].parse::<i64>();
                             if maybe_min_diff_bytes_raw.is_err() {
                                 return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("invalid min diff bytes argument, failed to parse as shorthand (e.g. 10M, 1G, etc) or raw bytes (e.g. 1000)")));
                             }
                             *min_diff_bytes = maybe_min_diff_bytes_raw.unwrap();
                         } else {
-                            *min_diff_bytes = maybe_min_diff_bytes.unwrap() as u64;
+                            *min_diff_bytes = maybe_min_diff_bytes.unwrap() as i64;
                         }
                     }
                     // "-t" => {
@@ -304,17 +302,4 @@ fn get_bytes_from_arg(a: &String) -> std::io::Result<usize> {
         ret *= 1024;
     } 
     Ok(ret)
-}
-
-fn get_shorthand_memory_limit(amount: usize) -> String {
-    if amount == 0 {
-        return format!("unlimited");
-    }
-    let mut unit = "M";
-    let mut mult = MEGABYTE;
-    if amount >= GIGABYTE {
-        unit = "G";
-        mult = GIGABYTE;
-    }
-    return format!("{}{}", amount / mult, unit)
 }
