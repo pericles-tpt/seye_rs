@@ -1,5 +1,5 @@
 extern crate queues;
-use std::{ffi::{OsStr, OsString}, fs::DirEntry, mem, os::unix::fs::MetadataExt, time::SystemTime};
+use std::{ffi::OsString, fs::DirEntry, mem, os::unix::fs::MetadataExt, time::SystemTime};
 use std::{collections::{HashMap, HashSet}, fs::{symlink_metadata, Metadata}, path::PathBuf, time::Duration};
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -8,6 +8,7 @@ pub struct FileEntry {
     pub bn: OsString,
     pub sz: u64,
     pub md: Option<SystemTime>,
+    pub hash: [u8; 32],
 }
 impl Default for FileEntry {
     fn default() -> Self {
@@ -15,6 +16,7 @@ impl Default for FileEntry {
             bn: OsString::new(),
             sz: 0,
             md: None,
+            hash: [0; 32],
         }
     }
 }
@@ -256,6 +258,7 @@ fn insert_file_entry(md: &Metadata, bn: OsString, dest: &mut Vec<FileEntry>) -> 
         bn: bn,
         sz: md.len(),
         md: t,
+        hash: [0; 32]
     };
     dest.push(e);
     return dest.len() - 1;
