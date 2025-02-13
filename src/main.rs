@@ -3,6 +3,7 @@ mod save;
 mod scan;
 mod diff;
 mod report;
+mod utility;
 
 #[macro_use]
 extern crate lazy_static;
@@ -14,6 +15,7 @@ use std::{collections::HashMap, path::PathBuf};
 use std::env;
 use report::report_changes;
 use scan::scan;
+use utility::MEGABYTE;
 
 const HELP_TEXT: &str = "usage: seye [OPTION]... [SCAN TARGET DIRECTORY] [SCAN SAVE FILE DIRECTORY]
 ------- Basic options -------
@@ -21,8 +23,6 @@ const HELP_TEXT: &str = "usage: seye [OPTION]... [SCAN TARGET DIRECTORY] [SCAN S
 ------- Scan options  -------
 -p          Show performance statistics after scan";
 
-const MEGABYTE: usize = 1024 * 1024;
-const GIGABYTE: usize = MEGABYTE * 1024;
 const MIN_MEMORY_LIMIT: usize = 10 * MEGABYTE;
 
 lazy_static! {
