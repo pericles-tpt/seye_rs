@@ -38,9 +38,10 @@ pub fn report_changes(target_path: PathBuf, output_path: PathBuf) -> std::io::Re
     let limit = combined_diffs.len();
     let mut total: i64 = 0;
     for i in 0..limit {
-        let minutes_after_initital = (((combined_diffs[i].t_diff.ns_diff as f64 / 1E9) as i64 + combined_diffs[i].t_diff.s_diff) as f64 / 60.0);
-        println!("{}: {:?} ({}) added {}m from initial", format!("{:?}", combined_diffs[i].diff_type).chars().nth(0).unwrap(), combined_diffs[i].p, get_shorthand_memory_limit((combined_diffs[i].size_here + combined_diffs[i].size_below)), minutes_after_initital);
-        total += (combined_diffs[i].size_here + combined_diffs[i].size_below);
+        let mut t = format!("{:?}",combined_diffs[i].diff_type).to_ascii_uppercase();
+        let _ = t.split_off(3);
+        println!("{}: {:?} ({})", t, combined_diffs[i].p, get_shorthand_memory_limit((combined_diffs[i].size_here + combined_diffs[i].size_below)));
+        total += combined_diffs[i].size_here + combined_diffs[i].size_below;
     }
     println!("Total change is: {}", get_shorthand_memory_limit(total));
 
