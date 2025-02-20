@@ -355,9 +355,9 @@ pub fn t_diff_to_system_time(td: TDiff, old_md: Option<SystemTime>) -> Option<Sy
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashSet, fs::File, path::PathBuf, str::FromStr};
+    use std::{collections::{HashMap, HashSet}, fs::File, path::PathBuf, str::FromStr};
 
-    use crate::{scan::scan, walk::walk_iter};
+    use crate::{scan::{bubble_up_props, scan}, walk::walk_until_end};
 
     use super::{add_diffs_to_items, get_cwd, DiffType};
 
@@ -388,7 +388,14 @@ mod tests {
                 std::fs::create_dir(&test_output_path);
 
                 // Scan before adding file
-                let initial_scan = walk_iter(new_file_path.clone(), None,&mut HashSet::new());
+                let mut pm: HashMap<std::path::PathBuf, usize> = HashMap::new();
+                let mut initial_scan = walk_until_end(new_file_path.clone(), &mut pm, &mut HashSet::new());
+
+                initial_scan.sort_by(|a, b| {
+                    return a.p.cmp(&b.p);
+                });
+
+                bubble_up_props(&mut initial_scan, &mut pm);
 
                 // Add file
                 let mf = File::create(new_file_path.clone());
@@ -397,7 +404,7 @@ mod tests {
                 }
 
                 // Get diff after scan
-                let res = scan(test_input_path, test_output_path, 1);
+                let res = scan(test_input_path, test_output_path, 1, 0, 256);
                 
                 // Do diff
 
