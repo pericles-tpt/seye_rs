@@ -49,43 +49,28 @@ where
     Ok(vec.into_boxed_slice())
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct CDirEntry {
-    pub p: PathBuf,
-    md: Option<SystemTime>,
+// TODO: Look into this, splitting CDireEntry by its 64B numeric properties and variable properties
+//       could improve caching performance for accessing sizing data
+// #[derive(Serialize, Deserialize, Debug, Clone)]
+// pub struct CDirEntrySz {
+//     pub files_here: usize,
+//     pub files_below: usize,
+//     pub dirs_here: usize,
+//     pub dirs_below: usize,
+//     pub size_here: i64,
+//     pub size_below: i64,
+//     pub memory_usage_here: usize,
+//     pub memory_usage_below: usize,
+// }
+// #[derive(Serialize, Deserialize, Debug, Clone)]
+// pub struct CDirEntryOther {
+//     pub p: PathBuf,
+//     pub md: Option<SystemTime>,
 
-    files_here: usize,
-    files_below: usize,
-    dirs_here: usize,
-    dirs_below: usize,
-    size_here: i128,
-    size_below: i128,
-    pub memory_usage_here: usize,
-    pub memory_usage_below: usize,
+//     #[serde(deserialize_with = "deserialize_boxed_slice")]
+//     pub files: Box<[FileEntry]>,
+// }
 
-    #[serde(deserialize_with = "deserialize_boxed_slice")]
-    files: Box<[FileEntry]>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct CDirEntryDiff {
-    pub p: PathBuf,
-    md: Option<SystemTime>,
-
-    files_here: usize,
-    files_below: usize,
-    dirs_here: usize,
-    dirs_below: usize,
-    size_here: i128,
-    size_below: i128,
-    pub memory_usage_here: usize,
-    pub memory_usage_below: usize,
-    
-    diff_type: DiffType,
-
-    #[serde(deserialize_with = "deserialize_boxed_slice")]
-    files: Box<[FileEntry]>,
-}
 
 lazy_static! {
     static ref IGNORE_LIST: HashSet<&'static std::ffi::OsStr> = {
