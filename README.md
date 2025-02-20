@@ -3,9 +3,9 @@ A Rust rewrite of my unfinished [seye](https://github.com/pericles-tpt/seye) pro
 
 ## Goals
 This is my first rust project, so some of these goals are focused on allowing me to test out approaches, ideas and a new language. However, as I further develop the prototype I plan to shift the focus from self education to improving the tool:
-- Learn how to program effectively in Rust and understand the borrow checker
+- ~~Learn how to program effectively in Rust and understand the borrow checker~~
 - ~~Learn how to do **iterative** tree traversal~~
-- Benchmark performance characteristics of iterative vs recursive tree traversal techniques
+- ~~Benchmark performance characteristics of iterative vs recursive tree traversal techniques~~ (skipped)
 - Implement memory limits for directory scans (down to a reasonable limit, probably 100M)
 - ~~Implement multithreading for directory scans~~
 - Implement multithreading for diff combining
@@ -13,13 +13,13 @@ This is my first rust project, so some of these goals are focused on allowing me
     - MainThread -> combine(diff0, diff1) = diff01
     - Thread1    -> combine(diff2, diff3) = diff23
     - MainThread -> combine(diff01, diff23) = diffAll
-- Learn about performance optimisation techniques
+- ~~Learn about performance optimisation techniques~~
 
 ## Progress
 The following functionality is currently working:
 
-- Scan: You can currently scan a directory and store the binary output of the scan in an output directory
-- Report: You can generate a basic report of which directories were: added, removed or modified. Reports look like this:
+- Scan: Scan a directory and store the binary output of the scan in an output directory, subsequent scans will just store the "diff".
+- Report: Generates a basic report of which directories were: added, removed or modified. Reports look like this:
 ```
 running as ROOT user
 MOD: "/home/pt/Downloads/OnbOxDty_export(2)" (+2G)
@@ -28,28 +28,28 @@ MOD: "/home/pt/Downloads" (-70M)
 REM: "/home/pt/Downloads/Geekbench-6.2.2-Linux" (-476M)
 Total change is: +2G
 ```
-- Find: You can find all files containing a substring in their name, it's currently configured to match `fd` as closely as possible (with more configuration options to come)
+- Find: Find all files containing a substring in their name, it's currently configured to match `fd` as closely as possible (with more configuration options to come)
 
 ### How it works
-1. Each time `scan` is run the program will do an iterative traversal of the target directory, gathering paths, size, modified dates, etc for each directory and file. It pushes those results onto a `Vector<CDirEntry>` which is returned in path-sorted order.
+1. Each time you run `scan` the program will do an iterative traversal of the target directory, gathering paths, size, modified dates, etc for each directory and file. It pushes those results onto a `Vector<CDirEntry>` which is returned in path-sorted order.
 2. The behaviour then branches:
     - IF it's the initial scan, then that result is saved to a file.
-    - Otherwise it'll read any existing diffs, combine them, add them to the INITIAL scan and finally compare the "initial scan + diff" with the current scan, to produce a new diff which is saved to a file.
+    - Otherwise it'll read any existing diffs, combine them, add them to the INITIAL scan and finally compare the "initial scan + diff" to the current scan, this produces a new diff which is saved to a file.
 
 PROS:
-- Saves disk space by storing just the diffs (full scans take 100MB+ for my home directory)
+- Saves disk space by storing just the diffs (scans of directories containing 1M+ files and 100K+ directories can take 100MB+ of space).
 
 CONS:
-- Worse performance than storing the entire scans each time, as diffs need to be combined and then added to the initial scan before comparing the initial and current scans
+- Slower than storing the entire scan each time, as the previous diff needs to be generated (before comparing to the current diff) by combining all previous diffs into a combined diff and then adding that combined diff to the initial scan.
 
 #### Multithreading
-You can run the scans across multiple threads by settings the `-t` parameter >= 2. All messaging between the main and additional thread is done with channels. When multithreading the responsibilities of the threads are:
-- Main Thread: Distributes incoming paths (from other threads), *roughly* evenly between all threads. Send EXIT command to threads when there's no work left.
-- Other Threads: Receive incoming paths, then walk directories iteratively up to a limit (specified with `-tdl` flag). A `STAT` is run on each file encountered, all `CDirEntry` generated are stored in a vector managed by the thread which is returned on termination, once the thread reaches its traversal limit it returns any remaining (i.e. not traversed) paths back to the main thread to redistribute.
+You can run the scans across multiple threads by settings the `-t` parameter >= 2. All messaging between the main and additional threads is done with channels. When multithreading the responsibilities of the threads are:
+- Main Thread: Redistributes incoming paths from each thread, back to all the threads *roughly* evenly. Sends an EXIT command to all threads when there's no paths left.
+- Other Threads: Receive incoming paths, then walks directories iteratively up to a limit (specified with `-tdl` flag). Each directory's information is stored in a `CDirEntry` and the information for each file is also stored in the `CDirEntry`. All `CDirEntry` are stored in a vector managed by the thread which is returned on termination. Once the thread reaches its traversal limit it returns any remaining (i.e. not traversed) paths back to the main thread to redistribute.
 
 ### Current Performance (avg of 3 runs)
-#### Scan
-Performance results of scans AFTER an initial scan, without multithreading (of my home directory copied to a pcie gen4 SSD):
+#### Scan (ran on Linux, on a copy of my home directory on a PCIE gen4 SSD)
+Performance results of scans without multithreading:
 ```
 Scanned 1367818 files, 231186 directories in: 4059ms
 ```
@@ -57,7 +57,6 @@ The same test conditions as above with threads=364 and thread_directory_limit=32
 ```
 Scanned 1367818 files, 231186 directories in: 1538ms
 ```
-
 The size of the initial scan is 169.7MB, a subsequent diff with one item added is 482B
 
 #### Find
@@ -69,7 +68,6 @@ The command I ran for `find` is:
 ```
 time sudo ./target/release/seye_rs find -t 96 -tdl 2048 Document /run/media/pt/gen4_test/pt > b.txt
 ```
-
 
 The average of 3 runs of each command is:
 | Program  | Time    |
