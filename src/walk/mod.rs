@@ -228,9 +228,10 @@ pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, skip_set: &H
                 continue;
             }
             let val = ent.unwrap();
-            if skip_set.contains(&val.path()) {
-                continue;
-            }
+            // NOTE: This was commented out as it has a BIG impact on performance
+            // if skip_set.contains(&val.path()) {
+            //     continue;
+            // }
     
             let maybe_ft = val.file_type();
             if maybe_ft.is_err() {
@@ -297,9 +298,10 @@ pub fn walk_search_until_limit(target: &String, some: &mut Vec<std::path::PathBu
                 continue;
             }
             let val = ent.unwrap();
-            if skip_set.contains(&val.path()) {
-                continue;
-            }
+            // NOTE: This was commented out as it has a BIG impact on performance
+            // if skip_set.contains(&val.path()) {
+            //     continue;
+            // }
 
             let maybe_ft = val.file_type();
             if maybe_ft.is_err() {
