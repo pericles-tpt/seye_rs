@@ -1,6 +1,7 @@
 mod walk;
 mod save;
 mod scan;
+mod find;
 mod diff;
 mod report;
 mod utility;
@@ -15,20 +16,26 @@ use std::{collections::HashMap, path::PathBuf};
 use std::env;
 use report::report_changes;
 use scan::scan;
+use find::find;
 use utility::MEGABYTE;
 
-const HELP_TEXT: &str = "usage: seye [OPTION]... [SCAN TARGET DIRECTORY] [SCAN SAVE FILE DIRECTORY]
+const HELP_TEXT: &str = "usage: seye scan [OPTION]... [SCAN TARGET DIRECTORY] [SCAN SAVE FILE DIRECTORY]
+usage: seye report [SCAN TARGET DIRECTORY] [SCAN SAVE FILE DIRECTORY]
+usage: seye find [TARGET SUBSTRING] [ROOT FIND DIRECTORY]
 ------- Basic options -------
 --help      Print usage and this help message and exit.
 ------- Scan options  -------
--p          Show performance statistics after scan";
+-p          Show performance statistics after scan
+-md         (default: 0) Specify the minimum size difference to include in diffs, can specify one of: n, nK, nM or nG, e.g. 1M
+-t          (default: 0) Specify the number of threads (must be > 1, otherwise num_threads is set to 0)
+-tdl        (default: 256) Specify the minimum number of READDIRs per thread (if not enough dirs are found, this is ignored)";
 
 const MIN_MEMORY_LIMIT: usize = 10 * MEGABYTE;
 
 lazy_static! {
     static ref VALID_COMMAND_OPTIONS: HashMap<&'static str, HashSet<&'static str>> = {
         let mut map = HashMap::new();
-        map.insert("scan", HashSet::from_iter(vec!["-p", "-md"]));
+        map.insert("find", HashSet::from_iter(vec!["-t", "-tdl"]));
         map
     };
 }
@@ -61,12 +68,13 @@ fn main() {
 
             // Get optional params
             // NOTE: memory_limit == 0 -> no limit
-            // let mut num_threads = 1;
-            // let mut memory_limit: usize = 0;
+            let mut num_threads = 0;
+            let mut memory_limit: usize = 0;
             // let mut is_recursive = false;
             let mut show_perf_info = false;
             let mut min_diff_bytes: i64 = 0;
-            let arg_eval_res = eval_optional_args("scan", optional_args, &mut show_perf_info, &mut min_diff_bytes);
+            let mut thread_add_dir_limit = 256;
+            let arg_eval_res = eval_optional_args("scan", optional_args, &mut show_perf_info, &mut memory_limit, &mut min_diff_bytes, &mut num_threads, &mut thread_add_dir_limit);
             if arg_eval_res.is_err() {
                 eprintln!("invalid argument provided: {}", arg_eval_res.err().unwrap());
                 return;
@@ -119,6 +127,52 @@ fn main() {
                 }
                 Err(e) => {
                     eprintln!("error occured while scanning: {}", e);
+                }
+            }
+        }
+        "find" => {
+            if params.len() < 2 {
+                eprintln!("insufficient arguments for `find`, expected at least [TARGET SUBSTING] and [ROOT FIND DIRECTORY]");
+                return;
+            }
+            let optional_args: Vec<_> = params.iter().collect();
+
+            let num_args = optional_args.len();
+
+            // Get optional params
+            let mut num_threads = 0;
+            let mut memory_limit: usize = 0;
+            // let mut is_recursive = false;
+            let mut show_perf_info = false;
+            let mut min_diff_bytes: i64 = 0;
+            let mut thread_add_dir_limit = 512;
+            let arg_eval_res = eval_optional_args("find", optional_args, &mut show_perf_info, &mut memory_limit, &mut min_diff_bytes, &mut num_threads, &mut thread_add_dir_limit);
+            if arg_eval_res.is_err() {
+                eprintln!("invalid argument provided: {}", arg_eval_res.err().unwrap());
+                return;
+            }
+            
+            // Get target substring
+            let target_substring = params[num_args - 2];
+            
+            // Get target directory
+            let maybe_target_str = params[num_args - 1];
+            let maybe_target_pb = validate_get_pathbuf(maybe_target_str);
+            if maybe_target_pb.is_err() {
+                eprintln!("invalid target path provided: {}", maybe_target_pb.err().unwrap());
+                return;
+            }
+            let target_pb = maybe_target_pb.unwrap();
+            
+
+            let res = find(target_substring.clone(), target_pb, num_threads, thread_add_dir_limit);
+            match res {
+                Ok(output_str) => {
+                    println!("{}", output_str);
+                    std::io::stdout().flush().unwrap();
+                }
+                Err(e) => {
+                    eprintln!("error occured while reporting: {}", e);
                 }
             }
         }
@@ -196,7 +250,7 @@ fn validate_get_pathbuf(p: &String) -> std::io::Result<PathBuf> {
     return Ok(PathBuf::from(&p));
 }
 
-fn eval_optional_args(cmd: &str, args: Vec<&&String>, show_perf_info: &mut bool, min_diff_bytes: &mut i64) -> std::io::Result<()> {    
+fn eval_optional_args(cmd: &str, args: Vec<&&String>, show_perf_info: &mut bool, memory_limit: &mut usize, min_diff_bytes: &mut i64, num_threads: &mut usize, thread_add_dir_limit: &mut usize) -> std::io::Result<()> {    
     let mut i = 0;
     while i < args.len() {
         let before_directory_args = i < args.len() - 2;
@@ -229,16 +283,16 @@ fn eval_optional_args(cmd: &str, args: Vec<&&String>, show_perf_info: &mut bool,
                     return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("missing additional argument for '{}' flag", a)));
                 }
                 match a {
-                    // "-m" => {
-                    //     let maybe_memory_limit = get_memory_limit_from_arg(args[i]);
-                    //     if maybe_memory_limit.is_err() {
-                    //         return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("invalid memory limit argument, {}", maybe_memory_limit.err().unwrap())));
-                    //     }
-                    //     *memory_limit = maybe_memory_limit.unwrap();
-                    //     if *memory_limit < MIN_MEMORY_LIMIT {
-                    //         return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("memory limit too low must be at least {}M", MIN_MEMORY_LIMIT / MEGABYTE)));
-                    //     }
-                    // }
+                    "-m" => {
+                        let maybe_memory_limit = get_bytes_from_arg(args[i]);
+                        if maybe_memory_limit.is_err() {
+                            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("invalid memory limit argument, {}", maybe_memory_limit.err().unwrap())));
+                        }
+                        *memory_limit = maybe_memory_limit.unwrap();
+                        if *memory_limit < MIN_MEMORY_LIMIT {
+                            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("memory limit too low must be at least {}M", MIN_MEMORY_LIMIT / MEGABYTE)));
+                        }
+                    }
                     "-md" => {
                         let maybe_min_diff_bytes = get_bytes_from_arg(args[i]);
                         if maybe_min_diff_bytes.is_err() {
@@ -252,13 +306,57 @@ fn eval_optional_args(cmd: &str, args: Vec<&&String>, show_perf_info: &mut bool,
                             *min_diff_bytes = maybe_min_diff_bytes.unwrap() as i64;
                         }
                     }
-                    // "-t" => {
-                    //     let maybe_threads: Result<usize, ParseIntError> = args[i].parse();
-                    //     if maybe_threads.is_err() || maybe_threads.clone().unwrap() < 1 {
-                    //         return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid thread argument, must be a non-negative integer"));
-                    //     }
-                    //     *num_threads = maybe_threads.unwrap();
-                    // }
+                    "-t" => {
+                        let maybe_threads: Result<usize, ParseIntError> = args[i].parse();
+                        if maybe_threads.is_err() || maybe_threads.clone().unwrap() < 1 {
+                            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid thread argument, must be a non-negative integer"));
+                        }
+                        *num_threads = maybe_threads.unwrap();
+                    }
+                    "-tdl" => {
+                        let maybe_thread_add_dir_limit: Result<usize, ParseIntError> = args[i].parse();
+                        if maybe_thread_add_dir_limit.is_err() || maybe_thread_add_dir_limit.clone().unwrap() < 1 {
+                            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid thread add dir limit argument, must be a non-negative integer"));
+                        }
+                        *thread_add_dir_limit = maybe_thread_add_dir_limit.unwrap();
+                    }
+                    _ => {
+                        if before_directory_args {
+                            return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("unimplemented parameter: {}, for command: {}", a, cmd)));
+                        }
+                    }
+                }
+            }
+            "find" => 'find: {
+                // NO VALUE OPTIONS
+                let mut is_no_val_opt = true;
+                match a {
+                    _ => {is_no_val_opt = false;}
+                }
+                if is_no_val_opt {
+                    break 'find;
+                }
+
+                // ONE VALUE OPTIONS
+                i += 1;
+                if i >= args.len() {
+                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("missing additional argument for '{}' flag", a)));
+                }
+                match a {
+                    "-t" => {
+                        let maybe_threads: Result<usize, ParseIntError> = args[i].parse();
+                        if maybe_threads.is_err() || maybe_threads.clone().unwrap() < 1 {
+                            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid thread argument, must be a non-negative integer"));
+                        }
+                        *num_threads = maybe_threads.unwrap();
+                    }
+                    "-tdl" => {
+                        let maybe_thread_add_dir_limit: Result<usize, ParseIntError> = args[i].parse();
+                        if maybe_thread_add_dir_limit.is_err() || maybe_thread_add_dir_limit.clone().unwrap() < 1 {
+                            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid thread add dir limit argument, must be a non-negative integer"));
+                        }
+                        *thread_add_dir_limit = maybe_thread_add_dir_limit.unwrap();
+                    }
                     _ => {
                         if before_directory_args {
                             return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("unimplemented parameter: {}, for command: {}", a, cmd)));
