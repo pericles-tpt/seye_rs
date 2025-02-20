@@ -73,12 +73,6 @@ Benchmark 1: sudo fd Document /run/media/pt/gen4_test/pt > a.txt
   Range (min … max):   105.8 ms … 134.0 ms    100 runs
 ```
 
-The average of 3 runs of each command is:
-| Program  | Time    |
-| -------- | ------- |
-| fd       | 0.1137s |
-| find     | 0.0947s |
-
 ## Usage
 Run the following command to see valid command and usage:
 ```
