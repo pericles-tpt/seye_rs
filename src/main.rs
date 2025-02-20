@@ -130,7 +130,7 @@ fn main() {
             match res {
                 Ok((num_files, num_dirs)) => {
                     if show_perf_info {
-                        println!("Scanned {} files, {} directories in: {}ms ({} syscalls per sec)", num_files, num_dirs, took.as_millis(), ((num_files + num_dirs) as f64 / (took.as_millis() as f64 / 1000.0)).ceil())
+                        println!("Scanned {} files, {} directories in: {}ms", num_files, num_dirs, took.as_millis())
                     }
                 }
                 Err(e) => {
