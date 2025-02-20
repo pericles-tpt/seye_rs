@@ -84,10 +84,9 @@ lazy_static! {
 //       information to the user
 const MEMORY_OFF_FACTOR: f64 = 1.1;
 
-pub fn walk_iter(root: std::path::PathBuf, stop_before_path: Option<std::path::PathBuf>, skip_set: &mut HashSet<PathBuf>) -> std::vec::Vec<CDirEntry> {
+pub fn walk_until_end(root: std::path::PathBuf, parent_map: &mut HashMap<std::path::PathBuf, usize>, skip_set: &mut HashSet<PathBuf>) -> std::vec::Vec<CDirEntry> {
     let mut df: std::vec::Vec<CDirEntry> = Vec::new();
     let mut v: Vec<std::path::PathBuf> = Vec::new();
-    let mut pm: HashMap<std::path::PathBuf, usize> = HashMap::new();
 
     let mut total_time_stat = Duration::new(0, 0);
     let mut sc = 0;
@@ -98,17 +97,12 @@ pub fn walk_iter(root: std::path::PathBuf, stop_before_path: Option<std::path::P
     // Push root onto stack
     let _ = v.push(root.clone());
     let mut idx:i64 = -1;
-    let has_stop_before_path = (&stop_before_path).is_some();
     loop {
         idx += 1;
         if idx as usize >= v.len() {
             break;
         }
         let mp = &v[idx as usize].clone();
-
-        if has_stop_before_path && *mp >= stop_before_path.as_deref().unwrap() {
-            break;
-        }
 
         if skip_set.contains(mp) {
             continue;
@@ -136,8 +130,8 @@ pub fn walk_iter(root: std::path::PathBuf, stop_before_path: Option<std::path::P
             continue;
         }
         let md = maybe_md.unwrap();
-        let curr_idx = insert_dir_entry(&md, &mp, &mut df, &mut pm);
-        
+        let curr_idx = insert_dir_entry(&md, &mp, &mut df, parent_map);
+
         let mut file_entries: Vec<FileEntry> = Vec::with_capacity(entries.len());
         for ent in entries {
             if ent.is_err() {
@@ -195,43 +189,148 @@ pub fn walk_iter(root: std::path::PathBuf, stop_before_path: Option<std::path::P
         }        
         df[curr_idx].files = file_entries.into_boxed_slice();
     }
-
-    
-    // Stage 2. Re-traverse elements, in-reverse to "bubble up" `below` properties up the ds
-    if df.len() > 0 {
-        let cap_len_dirs = df.capacity() as f64 / df.len() as f64;
-        let cap_len_dirs_map = pm.capacity() as f64 / pm.len() as f64;
-        let pm_entry_size = mem::size_of_val(&pm.entry(df[0].p.clone()));
-        let mut_dt = &mut df;
-        for i in 0..mut_dt.len() {
-            // Calculate memory usage for self
-            let curr_idx = mut_dt.len() - 1 - i;
-            let d = mut_dt[curr_idx].clone();
-            
-            mut_dt[curr_idx].memory_usage_here = (d.memory_usage_here as f64 * MEMORY_OFF_FACTOR) as usize;
-            mut_dt[curr_idx].memory_usage_below = (d.memory_usage_below as f64 * MEMORY_OFF_FACTOR) as usize;
-    
-            if let Some(parent) = d.p.parent() {
-                if let Some(maybe_ent) = pm.get(parent) {
-                    let idx = *maybe_ent;
-    
-                    mut_dt[idx].dirs_here += 1;
-                    mut_dt[idx].dirs_below += d.dirs_here + d.dirs_below;
-                    mut_dt[idx].files_below += d.files_here + d.files_below;
-                    mut_dt[idx].size_below += d.size_here + d.size_below;
-    
-                    mut_dt[idx].memory_usage_here += (((size_of::<CDirEntry>() + size_of::<PathBuf>()) as f64) * cap_len_dirs) as usize + (pm_entry_size as f64 * cap_len_dirs_map) as usize + (3 * d.p.capacity()); // dir + v + pm
-                    mut_dt[idx].memory_usage_below += d.memory_usage_here + d.memory_usage_below;
-                }
-            }
-        }
-    }
-
-    df.sort_by(|a, b| {
-        return a.p.cmp(&b.p);
-    });
     
     return df;
+}
+
+pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, skip_set: &HashSet<PathBuf>, other_entries: &mut Vec<CDirEntry>, thread_readdir_limit: usize) -> std::io::Result<Vec<PathBuf>> {
+    let mut idx = 0;
+    
+    let mut readdir_limit = thread_readdir_limit;
+    if readdir_limit < some.len() {
+        readdir_limit = some.len();
+    }
+    
+    let mut dir_q: Vec<PathBuf> = Vec::with_capacity(readdir_limit);
+    dir_q.append(some);
+
+    while idx < readdir_limit && idx < dir_q.len() {
+        let rd = std::fs::read_dir(&dir_q[idx]);
+        if rd.is_err() {
+            // TODO: Handle error
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", rd.err())));
+        }
+
+        let entries: Vec<Result<DirEntry, std::io::Error>> = rd.unwrap().collect();
+    
+        let maybe_md = symlink_metadata(&dir_q[idx]);
+        if maybe_md.is_err() {
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", maybe_md.err())));
+        }
+        let md = maybe_md.unwrap();
+        // TODO: Figure out how to remove `pm`, not used at all
+        let mut pm = HashMap::new();
+        let curr_idx = insert_dir_entry(&md, &dir_q[idx], other_entries, &mut pm);
+    
+        let mut file_entries: Vec<FileEntry> = Vec::with_capacity(entries.len());
+        for ent in entries {
+            if ent.is_err() {
+                continue;
+            }
+            let val = ent.unwrap();
+            if skip_set.contains(&val.path()) {
+                continue;
+            }
+    
+            let maybe_ft = val.file_type();
+            if maybe_ft.is_err() {
+                continue;
+            }
+            let ft = maybe_ft.unwrap();
+
+            let filename = val.file_name();
+            let is_dir = ft.is_dir();
+            if !ft.is_file() {
+                if is_dir {
+                    dir_q.push(val.path());
+                }
+                continue;
+            } else if IGNORE_LIST.contains(filename.as_os_str()) {
+                continue 
+            }
+    
+            let maybe_fmd = symlink_metadata(val.path());
+            if maybe_fmd.is_err() {
+                // TODO: Handle error
+                continue;
+            }
+            let fmd = maybe_fmd.unwrap();
+    
+            let filename_len = filename.len();
+            insert_file_entry(&fmd, filename, &mut file_entries);
+    
+            other_entries[curr_idx].files_here += 1;
+            other_entries[curr_idx].size_here += fmd.size() as i64;
+    
+            let file_entry_size = size_of::<FileEntry>() + filename_len;
+            other_entries[curr_idx].memory_usage_here += file_entry_size;
+        }        
+        other_entries[curr_idx].files = file_entries.into_boxed_slice();
+
+        idx += 1;
+    }
+
+    return Ok(dir_q.drain(idx..).collect());
+}
+
+pub fn walk_search_until_limit(target: &String, some: &mut Vec<std::path::PathBuf>, skip_set: &HashSet<PathBuf>, other_entries: &mut Vec<String>, thread_readdir_limit: usize) -> std::io::Result<Vec<PathBuf>> {
+    let mut idx = 0;
+    
+    let mut readdir_limit = thread_readdir_limit;
+    if readdir_limit < some.len() {
+        readdir_limit = some.len();
+    }
+
+    let mut dir_q: Vec<PathBuf> = Vec::with_capacity(readdir_limit);
+    dir_q.append(some);
+
+    while idx < readdir_limit && idx < dir_q.len() {
+        let rd = std::fs::read_dir(&dir_q[idx]);
+        if rd.is_err() {
+            // TODO: Handle error
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", rd.err())));
+        }
+
+        let entries: Vec<Result<DirEntry, std::io::Error>> = rd.unwrap().collect();
+        for ent in entries {
+            if ent.is_err() {
+                continue;
+            }
+            let val = ent.unwrap();
+            if skip_set.contains(&val.path()) {
+                continue;
+            }
+
+            let maybe_ft = val.file_type();
+            if maybe_ft.is_err() {
+                continue;
+            }
+
+            let ft = maybe_ft.unwrap();
+            let filename = val.file_name();
+            let bn = filename.to_str().unwrap();
+            let hidden = bn.starts_with(".");
+            if ft.is_symlink() || hidden {
+                continue;
+            }
+            
+            let bn_contains_substr = bn.contains(target); 
+            // let p_contains_substr = p.to_str().unwrap().contains(target);
+            if bn_contains_substr {
+                let full_path = val.path().into_os_string().into_string().unwrap();
+                other_entries.push(full_path);
+            }
+            
+            // For testing against, `fd`, ignore paths start with '.'
+            if ft.is_dir() {
+                dir_q.push(val.path());
+            }
+        }        
+
+        idx += 1;
+    }
+
+    return Ok(dir_q.drain(idx..).collect());
 }
 
 fn insert_file_entry(md: &Metadata, bn: OsString, dest: &mut Vec<FileEntry>) -> usize {
@@ -276,11 +375,11 @@ fn insert_dir_entry(md: &Metadata, p: &PathBuf, all_dirs: &mut Vec<CDirEntry>, p
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::{HashMap, HashSet}, path::PathBuf, str::FromStr};
+    use std::{collections::{HashMap, HashSet}, str::FromStr};
 
     use crate::utility::get_cwd;
 
-    use super::{walk_iter};
+    use super::{walk_until_end};
 
     #[test]
     fn one_root_file_iter() {
@@ -288,7 +387,8 @@ mod tests {
         let path = std::path::PathBuf::from_str(format!("{}/tests/test_dir/b", wd.display()).as_str());
         match path {
             Ok(p) => {
-                let res = walk_iter(p.clone(), None, &mut HashSet::new());
+                let mut pm = HashMap::new();
+                let res = walk_until_end(p.clone(), &mut pm, &mut HashSet::new());
                 assert_eq!(res.len(), 1);
 
                 assert_eq!(res[0].p, p);
@@ -312,7 +412,8 @@ mod tests {
         let path = std::path::PathBuf::from_str(format!("{}/tests/test_dir/c", wd.display()).as_str());
         match path {
             Ok(p) => {
-                let res = walk_iter(p.clone(), None,&mut HashSet::new());
+                let mut pm = HashMap::new();
+                let res = walk_until_end(p.clone(), &mut pm,&mut HashSet::new());
                 assert_eq!(res.len(), 2);
 
                 assert_eq!(res[0].p, p);
@@ -345,7 +446,8 @@ mod tests {
         let path = std::path::PathBuf::from_str(format!("{}/tests/test_dir/a/e", wd.display()).as_str());
         match path {
             Ok(p) => {
-                let res = walk_iter(p.clone(), None,&mut HashSet::new());
+                let mut pm = HashMap::new();
+                let res = walk_until_end(p.clone(), &mut pm, &mut HashSet::new());
                 assert_eq!(res.len(), 3);
 
                 assert_eq!(res[0].p, p);
@@ -369,7 +471,8 @@ mod tests {
         let path = std::path::PathBuf::from_str(format!("{}/tests/test_dir", wd.display()).as_str());
         match path {
             Ok(p) => {
-                let res = walk_iter(p.clone(), None,&mut HashSet::new());
+                let mut pm = HashMap::new();
+                let res = walk_until_end(p.clone(), &mut pm,&mut HashSet::new());
                 assert_eq!(res.len(), 8);
 
                 assert_eq!(res[0].p, p);
