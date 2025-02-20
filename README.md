@@ -60,13 +60,17 @@ Scanned 1367818 files, 231186 directories in: 1538ms
 The size of the initial scan is 169.7MB, a subsequent diff with one item added is 482B
 
 #### Find
-The `find` command is still a WIP and doesn't have as many options for configuration as the existing [`fd`](https://github.com/sharkdp/fd) tool (also written in Rust), it's currently configured to match the behaviour of `fd`'s defaults as closely as possible. Despite that, the `find` command returns 6 more results than `fd`, so I need to refine it a bit more. The command I ran for `fd` is:
+The `find` command is still a WIP and doesn't have as many options for configuration as the existing [`fd`](https://github.com/sharkdp/fd) tool (also written in Rust), it's currently configured to match the behaviour of `fd`'s defaults as closely as possible. Despite that, the `find` command returns 6 more results than `fd`, so I need to refine it a bit more. The benchmark scores (generated with the `hyperfine` benchmarking tool) for `find` vs `fd` are, find:
 ```
-time sudo fd Document /run/media/pt/gen4_test/pt > a.txt
+Benchmark 1: sudo ./target/release/seye_rs find -t 168 -tdl 1024 Document /run/media/pt/gen4_test/pt > b.txt
+  Time (mean ± σ):      90.3 ms ±   4.1 ms    [User: 4.6 ms, System: 4.9 ms]
+  Range (min … max):    82.9 ms … 109.6 ms    100 runs
 ```
-The command I ran for `find` is:
+fd:
 ```
-time sudo ./target/release/seye_rs find -t 96 -tdl 2048 Document /run/media/pt/gen4_test/pt > b.txt
+Benchmark 1: sudo fd Document /run/media/pt/gen4_test/pt > a.txt
+  Time (mean ± σ):     115.4 ms ±   4.2 ms    [User: 4.6 ms, System: 4.8 ms]
+  Range (min … max):   105.8 ms … 134.0 ms    100 runs
 ```
 
 The average of 3 runs of each command is:
