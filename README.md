@@ -47,20 +47,24 @@ You can run the scans across multiple threads by settings the `-t` parameter >= 
 - Main Thread: Redistributes incoming paths from each thread, back to all the threads *roughly* evenly. Sends an EXIT command to all threads when there's no paths left.
 - Other Threads: Receive incoming paths, then walks directories iteratively up to a limit (specified with `-tdl` flag). Each directory's information is stored in a `CDirEntry` and the information for each file is also stored in the `CDirEntry`. All `CDirEntry` are stored in a vector managed by the thread which is returned on termination. Once the thread reaches its traversal limit it returns any remaining (i.e. not traversed) paths back to the main thread to redistribute.
 
-### Current Performance (avg of 3 runs)
+### Current Performance (benchmarked with `hyperfine`) 
 #### Scan (ran on Linux, on a copy of my home directory on a PCIE gen4 SSD)
 Performance results of scans without multithreading:
 ```
-Scanned 1367818 files, 231186 directories in: 4059ms
+Benchmark 1: sudo ./target/release/seye_rs scan -md 50M /run/media/pt/gen4_test/pt ./output > b.txt
+  Time (mean ± σ):      4.351 s ±  0.044 s    [User: 0.005 s, System: 0.005 s]
+  Range (min … max):    4.282 s …  4.463 s    100 runs
 ```
 The same test conditions as above with threads=364 and thread_directory_limit=320:
 ```
-Scanned 1367818 files, 231186 directories in: 1538ms
+Benchmark 1: sudo ./target/release/seye_rs scan -md 50M -t 364 -tdl 320 /run/media/pt/gen4_test/pt ./output > b.txt
+  Time (mean ± σ):      1.655 s ±  0.028 s    [User: 0.005 s, System: 0.005 s]
+  Range (min … max):    1.597 s …  1.740 s    100 runs
 ```
 The size of the initial scan is 169.7MB, a subsequent diff with one item added is 482B
 
 #### Find
-The `find` command is still a WIP and doesn't have as many options for configuration as the existing [`fd`](https://github.com/sharkdp/fd) tool (also written in Rust), it's currently configured to match the behaviour of `fd`'s defaults as closely as possible. Despite that, the `find` command returns 6 more results than `fd`, so I need to refine it a bit more. The benchmark scores (generated with the `hyperfine` benchmarking tool) for `find` vs `fd` are, find:
+The `find` command is still a WIP and doesn't have as many options for configuration as the existing [`fd`](https://github.com/sharkdp/fd) tool (also written in Rust), it's currently configured to match the behaviour of `fd`'s defaults as closely as possible. Despite that, the `find` command returns 6 more results than `fd`, so I need to refine it a bit more. The benchmark scores for `find` vs `fd` are, find:
 ```
 Benchmark 1: sudo ./target/release/seye_rs find -t 168 -tdl 1024 Document /run/media/pt/gen4_test/pt > b.txt
   Time (mean ± σ):      90.3 ms ±   4.1 ms    [User: 4.6 ms, System: 4.9 ms]
