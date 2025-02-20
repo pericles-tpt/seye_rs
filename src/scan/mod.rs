@@ -82,11 +82,13 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
     let num_scan_dirs = curr_scan[0].dirs_here + curr_scan[0].dirs_below + 1;
 
     let diffs: Vec<CDirEntryDiff> = diff_saves(initial_scan, curr_scan, newest_initial_entry_time.unwrap(), iteration_count as u16 + 1, min_diff_bytes);
-    let mut path_to_subsequent = output_path.clone();
-    path_to_subsequent.push(format!("{}_diff_{}", path_hash, iteration_count + 1));
-    let f  = File::create(path_to_subsequent)?;
-    let writer = BufWriter::new(f);
-    bincode::serialize_into(writer, &diffs).expect("failed to seralise");
+    if diffs.len() > 0 {
+        let mut path_to_subsequent = output_path.clone();
+        path_to_subsequent.push(format!("{}_diff_{}", path_hash, iteration_count + 1));
+        let f  = File::create(path_to_subsequent)?;
+        let writer = BufWriter::new(f);
+        bincode::serialize_into(writer, &diffs).expect("failed to seralise");
+    }
 
     Ok((num_scan_files, num_scan_dirs))
 }
