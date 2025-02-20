@@ -1,23 +1,54 @@
-use std::{collections::HashSet, ffi::OsStr, fs::File, io::{BufWriter, Error}, os::unix::fs::MetadataExt, time::SystemTime};
-use crate::diff::{add_diffs_to_items, get_entry_from_dir_diff, merge_dir_diff_to_entry, CDirEntryDiff, DiffType};
-use crate::{save::{add_dir_diffs, diff_saves, get_hash_iteration_count_from_file_names, read_diff_file, read_save_file}, walk::{walk_iter, CDirEntry}};
+use std::{collections::{HashMap, HashSet}, ffi::OsStr, fs::File, io::{BufWriter, Error}, mem, os::unix::fs::MetadataExt, path::PathBuf, time::SystemTime};
+use crate::{diff::{add_diffs_to_items, get_entry_from_dir_diff, merge_dir_diff_to_entry, CDirEntryDiff, DiffType}, utility::thread_from_root, walk::{walk_collect_until_limit, walk_search_until_limit}};
+use crate::{save::{add_dir_diffs, diff_saves, get_hash_iteration_count_from_file_names, read_diff_file, read_save_file}, walk::{walk_until_end, CDirEntry}};
 
-pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, min_diff_bytes: i64) -> Result<(usize, usize), Error> {
+pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, min_diff_bytes: i64, num_threads: usize, thread_add_dir_limit: usize) -> Result<(usize, usize), Error> {
     let save_file_data = get_hash_iteration_count_from_file_names(&target_path, output_path.to_path_buf());
     let path_hash = save_file_data.0;
     let mut path_to_initial = output_path.clone();
     path_to_initial.push(format!("{}_initial", path_hash));
 
     let mut skip_set: HashSet<std::path::PathBuf> = HashSet::from_iter(vec![output_path.clone()]);
+    let mut curr_scan;
+    let mut pm: HashMap<std::path::PathBuf, usize> = HashMap::new();
+    if num_threads > 0 {
+        let dummy_target = 1;
+        let maybe_curr_scan = thread_from_root(target_path, skip_set, &dummy_target, num_threads, thread_add_dir_limit, Some(walk_collect_until_limit), None, |a: &CDirEntry, b: &CDirEntry| {
+            return a.p.cmp(&b.p);
+        });
+        if maybe_curr_scan.is_err() {
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to do MT walk: {:?}", maybe_curr_scan.err())))
+        }
+        curr_scan = maybe_curr_scan.unwrap();
 
-    let curr_scan = walk_iter(target_path, None, &mut skip_set);
+        curr_scan.sort_by(|a, b| {
+            return a.p.cmp(&b.p);
+        });
 
+        // Populate parent map
+        for ci in 0..curr_scan.len() {
+            let p = &curr_scan[ci].p;
+            pm.insert(p.clone(), ci);
+        }
+
+        // Traverse scan in reverse to "bubble up" properties
+        bubble_up_props(&mut curr_scan, &mut pm);
+    } else {
+        curr_scan = walk_until_end(target_path, &mut pm, &mut skip_set);
+        
+        // Traverse scan in reverse to "bubble up" properties
+        bubble_up_props(&mut curr_scan, &mut pm);
+        
+        curr_scan.sort_by(|a, b| {
+            return a.p.cmp(&b.p);
+        });
+    }
+    
     let iteration_count = save_file_data.1;
     let curr_is_initial_scan = iteration_count < 0;
     if curr_is_initial_scan {
-
         let f  = File::create(path_to_initial)?;
-        let writer = BufWriter::new(f);
+        let writer: BufWriter<File> = BufWriter::new(f);
         bincode::serialize_into(writer, &curr_scan).expect("failed to seralise");
     
         return Ok((curr_scan[0].files_here + curr_scan[0].files_below, curr_scan[0].dirs_here + curr_scan[0].dirs_below + 1))

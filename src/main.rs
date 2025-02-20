@@ -12,6 +12,8 @@ extern crate lazy_static;
 extern crate libc;
 
 use std::collections::HashSet;
+use std::io::Write;
+use std::num::ParseIntError;
 use std::{collections::HashMap, path::PathBuf};
 use std::env;
 use report::report_changes;
@@ -35,6 +37,7 @@ const MIN_MEMORY_LIMIT: usize = 10 * MEGABYTE;
 lazy_static! {
     static ref VALID_COMMAND_OPTIONS: HashMap<&'static str, HashSet<&'static str>> = {
         let mut map = HashMap::new();
+        map.insert("scan", HashSet::from_iter(vec!["-p", "-md", "-t", "-tdl"]));
         map.insert("find", HashSet::from_iter(vec!["-t", "-tdl"]));
         map
     };
@@ -47,18 +50,17 @@ fn main() {
         return;
     }
 
-    // Detect if running as sudo, provide some output
     let is_root = unsafe { libc::geteuid() == 0 };
-    let mut is_root_msg = "NOT ";
-    if is_root {
-        is_root_msg = "";
-    }
-    println!("{}running as ROOT user", is_root_msg);
-
     let cmd = args[1].as_str();
     let params: Vec<_> = args.iter().skip(2).collect();
     match cmd {
         "scan" => {
+            let mut is_root_msg = "NOT ";
+            if is_root {
+                is_root_msg = "";
+            }
+            println!("{}running as SUDO", is_root_msg);
+
             if params.len() < 2 {
                 eprintln!("insufficient arguments for `scan`, expected at least [INPUT SCAN PATH] and [OUTPUT SCAN FILE PATH]");
                 return;
@@ -80,6 +82,12 @@ fn main() {
                 return;
             }
             
+            // Scanning on 1 additional thread doesn't justify the performance overhead
+            if num_threads == 1 {
+                println!("WARNING: `num_threads` set to 1, setting `num_threads` to 0 (1 extra thread isn't worth the performance overhead)");
+                num_threads = 0;
+            }
+
             // Get input scan path
             let maybe_target_str = params[num_args - 2];
             let maybe_target_pb = validate_get_pathbuf(maybe_target_str);
@@ -117,12 +125,12 @@ fn main() {
             }
 
             let bef = std::time::Instant::now();
-            let res = scan(target_pb, output_pb, min_diff_bytes);
+            let res = scan(target_pb, output_pb, min_diff_bytes, num_threads, thread_add_dir_limit);
             let took = bef.elapsed();
             match res {
                 Ok((num_files, num_dirs)) => {
                     if show_perf_info {
-                        println!("Scanned {} files, {} directories in: {}ms", num_files, num_dirs, took.as_millis())
+                        println!("Scanned {} files, {} directories in: {}ms ({} syscalls per sec)", num_files, num_dirs, took.as_millis(), ((num_files + num_dirs) as f64 / (took.as_millis() as f64 / 1000.0)).ceil())
                     }
                 }
                 Err(e) => {
