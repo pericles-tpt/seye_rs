@@ -55,11 +55,11 @@ Benchmark 1: sudo ./target/release/seye_rs scan -md 50M /run/media/pt/gen4_test/
   Time (mean ± σ):      4.351 s ±  0.044 s    [User: 0.005 s, System: 0.005 s]
   Range (min … max):    4.282 s …  4.463 s    100 runs
 ```
-The same test conditions as above with threads=364 and thread_directory_limit=320:
+The same test conditions as above with threads=96 and thread_directory_limit=8192:
 ```
-Benchmark 1: sudo ./target/release/seye_rs scan -md 50M -t 364 -tdl 320 /run/media/pt/gen4_test/pt ./output > b.txt
-  Time (mean ± σ):      1.655 s ±  0.028 s    [User: 0.005 s, System: 0.005 s]
-  Range (min … max):    1.597 s …  1.740 s    100 runs
+Benchmark 1: time sudo ./target/release/seye_rs scan -md 50M -t 96 -tdl 8192 /run/media/pt/gen4_test/pt ./output
+  Time (mean ± σ):      1.486 s ±  0.023 s    [User: 0.005 s, System: 0.004 s]
+  Range (min … max):    1.436 s …  1.551 s    100 runs
 ```
 The size of the initial scan is 169.7MB, a subsequent diff with one item added is 482B
 
