@@ -194,7 +194,8 @@ pub fn walk_until_end(root: std::path::PathBuf, parent_map: &mut HashMap<std::pa
 }
 
 pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, skip_set: &HashSet<PathBuf>, other_entries: &mut Vec<CDirEntry>, thread_readdir_limit: usize) -> std::io::Result<Vec<PathBuf>> {
-    let mut idx = 0;
+    let mut dIdx = 0;
+    let mut fIdx = 0;
     
     let mut readdir_limit = thread_readdir_limit;
     if readdir_limit < some.len() {
@@ -204,8 +205,8 @@ pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, skip_set: &H
     let mut dir_q: Vec<PathBuf> = Vec::with_capacity(readdir_limit);
     dir_q.append(some);
 
-    while idx < readdir_limit && idx < dir_q.len() {
-        let rd = std::fs::read_dir(&dir_q[idx]);
+    while (dIdx + fIdx) < readdir_limit && dIdx < dir_q.len() {
+        let rd = std::fs::read_dir(&dir_q[dIdx]);
         if rd.is_err() {
             // TODO: Handle error
             return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", rd.err())));
@@ -213,14 +214,14 @@ pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, skip_set: &H
 
         let entries: Vec<Result<DirEntry, std::io::Error>> = rd.unwrap().collect();
     
-        let maybe_md = symlink_metadata(&dir_q[idx]);
+        let maybe_md = symlink_metadata(&dir_q[dIdx]);
         if maybe_md.is_err() {
             return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", maybe_md.err())));
         }
         let md = maybe_md.unwrap();
         // TODO: Figure out how to remove `pm`, not used at all
         let mut pm = HashMap::new();
-        let curr_idx = insert_dir_entry(&md, &dir_q[idx], other_entries, &mut pm);
+        let curr_idx = insert_dir_entry(&md, &dir_q[dIdx], other_entries, &mut pm);
     
         let mut file_entries: Vec<FileEntry> = Vec::with_capacity(entries.len());
         for ent in entries {
@@ -256,6 +257,8 @@ pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, skip_set: &H
                 continue;
             }
             let fmd = maybe_fmd.unwrap();
+
+            fIdx += 1;
     
             let filename_len = filename.len();
             insert_file_entry(&fmd, filename, &mut file_entries);
@@ -268,14 +271,15 @@ pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, skip_set: &H
         }        
         other_entries[curr_idx].files = file_entries.into_boxed_slice();
 
-        idx += 1;
+        dIdx += 1;
     }
 
-    return Ok(dir_q.drain(idx..).collect());
+    return Ok(dir_q.drain(dIdx..).collect());
 }
 
 pub fn walk_search_until_limit(target: &String, some: &mut Vec<std::path::PathBuf>, skip_set: &HashSet<PathBuf>, other_entries: &mut Vec<String>, thread_readdir_limit: usize) -> std::io::Result<Vec<PathBuf>> {
-    let mut idx = 0;
+    let mut dIdx = 0;
+    let mut fIdx = 0;
     
     let mut readdir_limit = thread_readdir_limit;
     if readdir_limit < some.len() {
@@ -285,8 +289,8 @@ pub fn walk_search_until_limit(target: &String, some: &mut Vec<std::path::PathBu
     let mut dir_q: Vec<PathBuf> = Vec::with_capacity(readdir_limit);
     dir_q.append(some);
 
-    while idx < readdir_limit && idx < dir_q.len() {
-        let rd = std::fs::read_dir(&dir_q[idx]);
+    while (fIdx + dIdx) < readdir_limit && dIdx < dir_q.len() {
+        let rd = std::fs::read_dir(&dir_q[dIdx]);
         if rd.is_err() {
             // TODO: Handle error
             return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", rd.err())));
@@ -317,22 +321,24 @@ pub fn walk_search_until_limit(target: &String, some: &mut Vec<std::path::PathBu
             }
             
             let bn_contains_substr = bn.contains(target); 
-            // let p_contains_substr = p.to_str().unwrap().contains(target);
+            // let p_contains_substr = val.path().to_str().unwrap().contains(target);
             if bn_contains_substr {
                 let full_path = val.path().into_os_string().into_string().unwrap();
                 other_entries.push(full_path);
             }
             
             // For testing against, `fd`, ignore paths start with '.'
+            fIdx += 1;
             if ft.is_dir() {
                 dir_q.push(val.path());
+                fIdx -= 1;
             }
         }        
 
-        idx += 1;
+        dIdx += 1;
     }
 
-    return Ok(dir_q.drain(idx..).collect());
+    return Ok(dir_q.drain(dIdx..).collect());
 }
 
 fn insert_file_entry(md: &Metadata, bn: OsString, dest: &mut Vec<FileEntry>) -> usize {
