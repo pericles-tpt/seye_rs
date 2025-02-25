@@ -67,18 +67,18 @@ Benchmark 1: sudo ./target/release/seye_rs scan -md 50M -t 16 -tdl 6144 /run/med
 ```
 The size of the initial scan is 169.7MB, a subsequent diff with one item added is 482B
 
-#### Find (ran hyperfine with warmup=300)
+#### Find (ran hyperfine with warmup=250)
 The `find` command is still a WIP and doesn't have as many options for configuration as the competing [`fd`](https://github.com/sharkdp/fd) tool (also written in Rust), it's currently configured to match the behaviour of `fd`'s defaults as closely as possible. Despite that, the `find` command returns 6 more results than `fd`, so I need to refine it a bit more. The benchmark scores for `find` vs `fd` are, find:
 ```
 Benchmark 1: sudo ./target/release/seye_rs find -t 168 -tdl 6144 Document /run/media/pt/gen4_test/pt > b.txt
-  Time (mean ± σ):      74.2 ms ±   4.7 ms    [User: 4.3 ms, System: 4.7 ms]
-  Range (min … max):    64.0 ms …  86.3 ms    100 runs
+  Time (mean ± σ):      74.8 ms ±   4.8 ms    [User: 4.6 ms, System: 4.5 ms]
+  Range (min … max):    63.4 ms …  92.8 ms    1000 runs
 ```
 fd:
 ```
-Benchmark 1: sudo fd --color never Document /run/media/pt/gen4_test/pt > a.txt
-  Time (mean ± σ):     112.7 ms ±   4.6 ms    [User: 4.6 ms, System: 4.7 ms]
-  Range (min … max):   103.8 ms … 123.2 ms    100 runs
+Benchmark 1: sudo fd -I --color never Document /run/media/pt/gen4_test/pt > a.txt
+  Time (mean ± σ):      75.4 ms ±   4.8 ms    [User: 4.5 ms, System: 4.2 ms]
+  Range (min … max):    64.0 ms …  97.5 ms    1000 runs
 ```
 
 ## Usage
