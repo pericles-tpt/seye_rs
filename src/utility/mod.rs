@@ -114,13 +114,21 @@ pub fn thread_from_root<T: Clone + std::marker::Send + 'static, U: std::marker::
 
                     let new_paths = maybe_send_to_main.unwrap();
                     new_paths_len = new_paths.len();
-                    if new_paths.len() > 0 {
-                        thread_tx.send((TM_NEW_PATHS, new_paths)).unwrap();
+                    if new_paths_len > 0 {
+                        let mut sent = false;
+                        while !sent {
+                            let res= thread_tx.send((TM_NEW_PATHS, new_paths.clone()));
+                            sent = !res.is_err();
+                        }
                     }
                 }
 
                 if new_paths_len == 0 {
-                    thread_tx.send((TM_NO_PATHS, Vec::new())).unwrap();
+                    let mut sent = false;
+                    while !sent {
+                        let send_res = thread_tx.send((TM_NO_PATHS, Vec::new()));
+                        sent = !send_res.is_err();
+                    }
                     results.sort_by(sort_output_items);
                 }
 
