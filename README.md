@@ -44,37 +44,41 @@ CONS:
 
 #### Multithreading
 You can run the scans across multiple threads by settings the `-t` parameter >= 2. All messaging between the main and additional threads is done with channels. When multithreading the responsibilities of the threads are:
-- Main Thread: Redistributes incoming paths from each thread, back to all the threads *roughly* evenly. Sends an EXIT command to all threads when there's no paths left.
+- Main Thread: Redistributes incoming paths from each thread, back to all the ready threads. Sends an EXIT command to all threads when there are no paths left.
 - Other Threads: Receive incoming paths, then walks directories iteratively up to a limit (specified with `-tdl` flag). Each directory's information is stored in a `CDirEntry` and the information for each file is also stored in the `CDirEntry`. All `CDirEntry` are stored in a vector managed by the thread which is returned on termination. Once the thread reaches its traversal limit it returns any remaining (i.e. not traversed) paths back to the main thread to redistribute.
 
 ### Current Performance (benchmarked with `hyperfine`) 
-#### Scan (ran on Linux, on a copy of my home directory on a PCIE gen4 SSD)
+System:
+- Ryzen 9800X3D (8C/16T, 96MB L3 cache)
+- 48GB (2x24GB DDR5 6000)
+- NM790 1TB Gen4 SSD
+#### Scan (ran hyperfine with warmup=10)
 Performance results of scans without multithreading:
 ```
-Benchmark 1: sudo ./target/release/seye_rs scan -md 50M /run/media/pt/gen4_test/pt ./output > b.txt
-  Time (mean ± σ):      4.351 s ±  0.044 s    [User: 0.005 s, System: 0.005 s]
-  Range (min … max):    4.282 s …  4.463 s    100 runs
+Benchmark 1: sudo ./target/release/seye_rs scan -md 50M /run/media/pt/gen4_test/pt ./output
+  Time (mean ± σ):      4.127 s ±  0.014 s    [User: 0.004 s, System: 0.005 s]
+  Range (min … max):    4.090 s …  4.155 s    100 runs
 ```
-The same test conditions as above with threads=96 and thread_directory_limit=8192:
+The same test conditions as above with threads=16 and thread_directory_limit=6144:
 ```
-Benchmark 1: time sudo ./target/release/seye_rs scan -md 50M -t 96 -tdl 8192 /run/media/pt/gen4_test/pt ./output
-  Time (mean ± σ):      1.486 s ±  0.023 s    [User: 0.005 s, System: 0.004 s]
-  Range (min … max):    1.436 s …  1.551 s    100 runs
+Benchmark 1: sudo ./target/release/seye_rs scan -md 50M -t 16 -tdl 6144 /run/media/pt/gen4_test/pt ./output
+  Time (mean ± σ):      1.367 s ±  0.013 s    [User: 0.004 s, System: 0.005 s]
+  Range (min … max):    1.338 s …  1.401 s    100 runs
 ```
 The size of the initial scan is 169.7MB, a subsequent diff with one item added is 482B
 
-#### Find
-The `find` command is still a WIP and doesn't have as many options for configuration as the existing [`fd`](https://github.com/sharkdp/fd) tool (also written in Rust), it's currently configured to match the behaviour of `fd`'s defaults as closely as possible. Despite that, the `find` command returns 6 more results than `fd`, so I need to refine it a bit more. The benchmark scores for `find` vs `fd` are, find:
+#### Find (ran hyperfine with warmup=300)
+The `find` command is still a WIP and doesn't have as many options for configuration as the competing [`fd`](https://github.com/sharkdp/fd) tool (also written in Rust), it's currently configured to match the behaviour of `fd`'s defaults as closely as possible. Despite that, the `find` command returns 6 more results than `fd`, so I need to refine it a bit more. The benchmark scores for `find` vs `fd` are, find:
 ```
-Benchmark 1: sudo ./target/release/seye_rs find -t 288 -tdl 4096 Document /run/media/pt/gen4_test/pt > b.txt
-  Time (mean ± σ):      81.8 ms ±   4.1 ms    [User: 4.7 ms, System: 4.5 ms]
-  Range (min … max):    72.8 ms …  91.6 ms    100 runs
+Benchmark 1: sudo ./target/release/seye_rs find -t 168 -tdl 6144 Document /run/media/pt/gen4_test/pt > b.txt
+  Time (mean ± σ):      74.2 ms ±   4.7 ms    [User: 4.3 ms, System: 4.7 ms]
+  Range (min … max):    64.0 ms …  86.3 ms    100 runs
 ```
 fd:
 ```
-Benchmark 1: sudo fd Document /run/media/pt/gen4_test/pt > a.txt
-  Time (mean ± σ):     115.4 ms ±   4.2 ms    [User: 4.6 ms, System: 4.8 ms]
-  Range (min … max):   105.8 ms … 134.0 ms    100 runs
+Benchmark 1: sudo fd --color never Document /run/media/pt/gen4_test/pt > a.txt
+  Time (mean ± σ):     112.7 ms ±   4.6 ms    [User: 4.6 ms, System: 4.7 ms]
+  Range (min … max):   103.8 ms … 123.2 ms    100 runs
 ```
 
 ## Usage
