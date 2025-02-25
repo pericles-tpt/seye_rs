@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::HashSet, path::PathBuf, sync::mpsc, thread::JoinHandle};
+use std::{cmp::Ordering, collections::HashSet, num, path::PathBuf, sync::mpsc, thread::JoinHandle};
 
 pub const KILOBYTE: usize = 1024;
 pub const MEGABYTE: usize = KILOBYTE * 1024;
@@ -153,13 +153,14 @@ pub fn thread_from_root<T: Clone + std::marker::Send + 'static, U: std::marker::
     }
     
     // Spin up main thread to check for messages from other threads
+    let mut ready_thread_idxs: Vec<usize> = Vec::with_capacity(num_threads);
     loop {
         // Check for messages from other friends to determine if: paths returned OR no excess paths
         let mut all_threads_stopped = true;
         for ti in 0..thread_to_m_chans.len() {
-            let maybe_msg = thread_to_m_chans[ti].1.recv();
-            // TODO: Handle error
-            if !maybe_msg.is_err() {
+            let maybe_msg = thread_to_m_chans[ti].1.try_recv();
+            let busy = maybe_msg.is_err();
+            if !busy {
                 let msg = maybe_msg.unwrap();
                 if msg.0 != TM_NO_PATHS {
                     all_threads_stopped = false;
@@ -169,10 +170,11 @@ pub fn thread_from_root<T: Clone + std::marker::Send + 'static, U: std::marker::
                     let mut new_paths = msg.1.clone();
                     paths_to_distribute.append(&mut new_paths);
                 }
+                ready_thread_idxs.push(ti);
             }
-
         }
-
+        all_threads_stopped = all_threads_stopped && ready_thread_idxs.len() == num_threads;
+        
         // No paths left to distribute -> kill all threads
         let curr_paths = paths_to_distribute.clone();
         if curr_paths.len() == 0 {
@@ -186,21 +188,28 @@ pub fn thread_from_root<T: Clone + std::marker::Send + 'static, U: std::marker::
         }
 
         // Distribute excess paths from threads back to threads (round robin)
-        let min_paths_per_thread = curr_paths.len() / num_threads;
-        let rem_paths = curr_paths.len() - (min_paths_per_thread * num_threads);
-        let mut curr_path_start_idx = 0;
-        for to_thread in 0..num_threads {
-            let mut num_thread_paths = min_paths_per_thread;
-            if to_thread < rem_paths {
-                num_thread_paths += 1;
+        let num_ready = ready_thread_idxs.len();
+        if num_ready > 0 {
+            let min_paths_per_thread = curr_paths.len() / num_ready;
+            let mut rem_paths = curr_paths.len() - (min_paths_per_thread * num_ready);
+            let mut curr_path_start_idx = 0;
+            for ri in 0..num_ready {
+                let to_thread = ready_thread_idxs[ri];
+                let mut num_thread_paths = min_paths_per_thread;
+                if rem_paths > 0 {
+                    num_thread_paths += 1;
+                    rem_paths -= 1;
+                }
+    
+                let thread_paths = curr_paths[curr_path_start_idx..curr_path_start_idx + num_thread_paths].to_vec();
+    
+                m_to_thread_chans[to_thread].send((MT_NEW_PATHS, thread_paths));
+                curr_path_start_idx += num_thread_paths;
             }
 
-            let thread_paths = curr_paths[curr_path_start_idx..curr_path_start_idx + num_thread_paths].to_vec();
-
-            m_to_thread_chans[to_thread].send((MT_NEW_PATHS, thread_paths));
-            curr_path_start_idx += num_thread_paths;
+            paths_to_distribute.drain(0..curr_paths.len());
+            ready_thread_idxs.clear();
         }
-        paths_to_distribute.drain(0..curr_paths.len());
     }
 
     // Join finished threads and retrieve the items from each
