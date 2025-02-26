@@ -87,6 +87,7 @@ Benchmark 1: fd -I --color never Document /run/media/pt/gen4_test/pt/Documents >
 - Intel N3530 (4C/4T, 2MB L3 Cache)
 - 4GB (1x4GB DDR3)
 - 860 EVO 250GB SATA SSD
+
 NOTE: Since this is a passively cooled laptop, I waited 5 minutes between tests to allow the CPU to cool down
 
 ##### Scan (ran hyperfine with warmup=10)
