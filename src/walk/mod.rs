@@ -205,24 +205,21 @@ pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, skip_set: &H
     let mut dir_q: Vec<PathBuf> = Vec::with_capacity(readdir_limit);
     dir_q.append(some);
 
+    let mut pm = HashMap::new();
     while (dIdx + fIdx) < readdir_limit && dIdx < dir_q.len() {
         let rd = std::fs::read_dir(&dir_q[dIdx]);
         if rd.is_err() {
-            // TODO: Handle error
             return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", rd.err())));
         }
 
-        let entries: Vec<Result<DirEntry, std::io::Error>> = rd.unwrap().collect();
-    
         let maybe_md = symlink_metadata(&dir_q[dIdx]);
         if maybe_md.is_err() {
             return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", maybe_md.err())));
         }
         let md = maybe_md.unwrap();
-        // TODO: Figure out how to remove `pm`, not used at all
-        let mut pm = HashMap::new();
+
         let curr_idx = insert_dir_entry(&md, &dir_q[dIdx], other_entries, &mut pm);
-    
+        let entries: Vec<Result<DirEntry, std::io::Error>> = rd.unwrap().collect();
         let mut file_entries: Vec<FileEntry> = Vec::with_capacity(entries.len());
         for ent in entries {
             if ent.is_err() {
@@ -234,21 +231,21 @@ pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, skip_set: &H
             //     continue;
             // }
     
+            let filename = val.file_name();
+            if IGNORE_LIST.contains(filename.as_os_str()) {
+                continue 
+            }
+            
             let maybe_ft = val.file_type();
             if maybe_ft.is_err() {
                 continue;
             }
             let ft = maybe_ft.unwrap();
-
-            let filename = val.file_name();
-            let is_dir = ft.is_dir();
             if !ft.is_file() {
-                if is_dir {
+                if ft.is_dir() {
                     dir_q.push(val.path());
                 }
                 continue;
-            } else if IGNORE_LIST.contains(filename.as_os_str()) {
-                continue 
             }
     
             let maybe_fmd = symlink_metadata(val.path());
@@ -307,27 +304,26 @@ pub fn walk_search_until_limit(target: &String, some: &mut Vec<std::path::PathBu
             //     continue;
             // }
 
+            // FILTER
             let maybe_ft = val.file_type();
             if maybe_ft.is_err() {
                 continue;
             }
 
             let ft = maybe_ft.unwrap();
-            let filename = val.file_name();
-            let bn = filename.to_str().unwrap();
-            let hidden = bn.starts_with(".");
-            if ft.is_symlink() || hidden {
+            if !ft.is_dir() && !ft.is_file() {
                 continue;
             }
-            
-            let bn_contains_substr = bn.contains(target); 
-            // let p_contains_substr = val.path().to_str().unwrap().contains(target);
-            if bn_contains_substr {
-                let full_path = val.path().into_os_string().into_string().unwrap();
-                other_entries.push(full_path);
+
+            let filename = val.file_name();
+            let bn: &str = filename.to_str().unwrap();
+            if bn.starts_with(".") {
+                continue;
             }
-            
-            // For testing against, `fd`, ignore paths start with '.'
+            // let p_contains_substr = val.path().to_str().unwrap().contains(target);
+            if bn.contains(target) {
+                other_entries.push(val.path().into_os_string().into_string().unwrap());
+            }
             fIdx += 1;
             if ft.is_dir() {
                 dir_q.push(val.path());
