@@ -321,13 +321,18 @@ pub fn walk_search_until_limit(target: &String, some: &mut Vec<std::path::PathBu
                 continue;
             }
             // let p_contains_substr = val.path().to_str().unwrap().contains(target);
-            if bn.contains(target) {
-                other_entries.push(val.path().into_os_string().into_string().unwrap());
-            }
             fIdx += 1;
             if ft.is_dir() {
                 dir_q.push(val.path());
                 fIdx -= 1;
+            }
+
+            if bn.contains(target) {
+                let mut s = val.path().into_os_string().into_string().unwrap();
+                if ft.is_dir() {
+                    s = format!("{}/", s)
+                }
+                other_entries.push(s);
             }
         }        
 
