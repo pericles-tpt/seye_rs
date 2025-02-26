@@ -175,9 +175,12 @@ fn main() {
 
             let res = find(target_substring.clone(), target_pb, num_threads, thread_add_dir_limit);
             match res {
-                Ok(output_str) => {
-                    println!("{}", output_str);
-                    std::io::stdout().flush().unwrap();
+                Ok(entries) => {
+                    let output_str = entries.join("\n");
+                    let res = std::io::stdout().write(output_str.as_bytes());
+                    if res.is_err() {
+                        eprint!("failed to write `find` results to stdout: {:?}", res.err());
+                    }
                 }
                 Err(e) => {
                     eprintln!("error occured while reporting: {}", e);
