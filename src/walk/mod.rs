@@ -95,14 +95,14 @@ pub fn walk_until_end(root: std::path::PathBuf, parent_map: &mut HashMap<std::pa
 
     // Stage 1. Traverse file tree and add to list
     // Push root onto stack
-    let _ = v.push(root.clone());
+    let _ = v.push(root);
     let mut idx:i64 = -1;
     loop {
         idx += 1;
         if idx as usize >= v.len() {
             break;
         }
-        let mp = &v[idx as usize].clone();
+        let mp = &v[idx as usize];
 
         if skip_set.contains(mp) {
             continue;
@@ -361,8 +361,9 @@ fn insert_dir_entry(md: &Metadata, p: &PathBuf, all_dirs: &mut Vec<CDirEntry>, p
         Ok(st) => {Some(st)}
         Err(_) => None
     };
+    let pb = p.to_path_buf();
     let e = CDirEntry{
-        p: p.clone(),
+        p: pb.clone(),
         md: t,
 
         files_here: 0,
@@ -377,7 +378,7 @@ fn insert_dir_entry(md: &Metadata, p: &PathBuf, all_dirs: &mut Vec<CDirEntry>, p
         files: Box::new([FileEntry::default()]),
     };
     all_dirs.push(e);
-    path_idx_map.insert(p.clone(), all_dirs.len() - 1);
+    path_idx_map.insert(pb, all_dirs.len() - 1);
     return all_dirs.len() - 1;                                           
 }
 
@@ -396,7 +397,7 @@ mod tests {
         match path {
             Ok(p) => {
                 let mut pm = HashMap::new();
-                let res = walk_until_end(p.clone(), &mut pm, &mut HashSet::new());
+                let res = walk_until_end(p.to_path_buf(), &mut pm, &mut HashSet::new());
                 assert_eq!(res.len(), 1);
 
                 assert_eq!(res[0].p, p);
@@ -421,7 +422,7 @@ mod tests {
         match path {
             Ok(p) => {
                 let mut pm = HashMap::new();
-                let res = walk_until_end(p.clone(), &mut pm,&mut HashSet::new());
+                let res = walk_until_end(p.to_path_buf(), &mut pm,&mut HashSet::new());
                 assert_eq!(res.len(), 2);
 
                 assert_eq!(res[0].p, p);
@@ -455,7 +456,7 @@ mod tests {
         match path {
             Ok(p) => {
                 let mut pm = HashMap::new();
-                let res = walk_until_end(p.clone(), &mut pm, &mut HashSet::new());
+                let res = walk_until_end(p.to_path_buf(), &mut pm, &mut HashSet::new());
                 assert_eq!(res.len(), 3);
 
                 assert_eq!(res[0].p, p);
@@ -480,7 +481,7 @@ mod tests {
         match path {
             Ok(p) => {
                 let mut pm = HashMap::new();
-                let res = walk_until_end(p.clone(), &mut pm,&mut HashSet::new());
+                let res = walk_until_end(p.to_path_buf(), &mut pm,&mut HashSet::new());
                 assert_eq!(res.len(), 8);
 
                 assert_eq!(res[0].p, p);

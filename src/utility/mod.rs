@@ -129,7 +129,6 @@ pub fn thread_from_root<T: Clone + std::marker::Send + 'static, U: std::marker::
                         let send_res = thread_tx.send((TM_NO_PATHS, Vec::new()));
                         sent = !send_res.is_err();
                     }
-                    results.sort_by(sort_output_items);
                 }
 
                 let maybe_msg = thread_rx.recv();
@@ -140,7 +139,7 @@ pub fn thread_from_root<T: Clone + std::marker::Send + 'static, U: std::marker::
                             break;
                         }
                         MT_NEW_PATHS => {
-                            let mut new_paths = msg.1.clone();
+                            let mut new_paths = msg.1;
                             buf.append(&mut new_paths);
                         }
                         default => {}
@@ -160,24 +159,22 @@ pub fn thread_from_root<T: Clone + std::marker::Send + 'static, U: std::marker::
         for ti in 0..thread_to_m_chans.len() {
             let maybe_msg = thread_to_m_chans[ti].1.try_recv();
             let busy = maybe_msg.is_err();
-            if !busy {
-                let msg = maybe_msg.unwrap();
-                if msg.0 != TM_NO_PATHS {
-                    all_threads_stopped = false;
-                }
-
-                if msg.0 == TM_NEW_PATHS {
-                    let mut new_paths = msg.1.clone();
-                    paths_to_distribute.append(&mut new_paths);
-                }
-                ready_thread_idxs.push(ti);
+            if busy {
+                continue
             }
+
+            ready_thread_idxs.push(ti);
+            let msg = maybe_msg.unwrap();
+            if msg.0 == TM_NEW_PATHS {
+                let mut new_paths = msg.1;
+                paths_to_distribute.append(&mut new_paths);
+                all_threads_stopped = false;
+            } // else TM_NO_PATHS
         }
         all_threads_stopped = all_threads_stopped && ready_thread_idxs.len() == num_threads;
         
         // No paths left to distribute -> kill all threads
-        let curr_paths = paths_to_distribute.clone();
-        if curr_paths.len() == 0 {
+        if paths_to_distribute.len() == 0 {
             if all_threads_stopped {
                 for sr in m_to_thread_chans {
                     sr.send((MT_EXIT, Vec::new()));
@@ -190,8 +187,8 @@ pub fn thread_from_root<T: Clone + std::marker::Send + 'static, U: std::marker::
         // Distribute excess paths from threads back to threads (round robin)
         let num_ready = ready_thread_idxs.len();
         if num_ready > 0 {
-            let min_paths_per_thread = curr_paths.len() / num_ready;
-            let mut rem_paths = curr_paths.len() - (min_paths_per_thread * num_ready);
+            let min_paths_per_thread = paths_to_distribute.len() / num_ready;
+            let mut rem_paths = paths_to_distribute.len() - (min_paths_per_thread * num_ready);
             let mut curr_path_start_idx = 0;
             for ri in 0..num_ready {
                 let to_thread = ready_thread_idxs[ri];
@@ -201,13 +198,13 @@ pub fn thread_from_root<T: Clone + std::marker::Send + 'static, U: std::marker::
                     rem_paths -= 1;
                 }
     
-                let thread_paths = curr_paths[curr_path_start_idx..curr_path_start_idx + num_thread_paths].to_vec();
+                let thread_paths = paths_to_distribute[curr_path_start_idx..curr_path_start_idx + num_thread_paths].to_vec();
     
                 m_to_thread_chans[to_thread].send((MT_NEW_PATHS, thread_paths));
                 curr_path_start_idx += num_thread_paths;
             }
 
-            paths_to_distribute.drain(0..curr_paths.len());
+            paths_to_distribute.drain(0..paths_to_distribute.len());
             ready_thread_idxs.clear();
         }
     }
