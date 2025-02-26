@@ -68,7 +68,9 @@ Benchmark 1: sudo ./target/release/seye_rs scan -md 50M -t 16 -tdl 6144 /run/med
 The size of the initial scan is 169.7MB, a subsequent diff with one item added is 482B
 
 #### Find (ran hyperfine with warmup=250)
-The `find` command is still a WIP and doesn't have as many options for configuration as the competing [`fd`](https://github.com/sharkdp/fd) tool (also written in Rust), it's currently configured to match the behaviour of `fd`'s defaults as closely as possible. Despite that, the `find` command returns 6 more results than `fd`, so I need to refine it a bit more. The benchmark scores for `find` vs `fd` are, find:
+The `find` command is still a WIP and doesn't have as many options for configuration as the competing [`fd`](https://github.com/sharkdp/fd) tool (also written in Rust), it's currently configured to match the behaviour of `fd`'s defaults as closely as possible. My `find` command is usually about ~2.5% faster, with 5 - 10% lower CPU uage, here is some benchmark data where `find` and `fd` produce the same output.
+
+find:
 ```
 Benchmark 1: sudo ./target/release/seye_rs find -t 168 -tdl 6144 Document /run/media/pt/gen4_test/pt > b.txt
   Time (mean ± σ):      73.6 ms ±   5.1 ms    [User: 4.7 ms, System: 4.5 ms]
