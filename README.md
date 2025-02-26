@@ -62,8 +62,8 @@ Benchmark 1: sudo ./target/release/seye_rs scan -md 50M /run/media/pt/gen4_test/
 The same test conditions as above with threads=16 and thread_directory_limit=6144:
 ```
 Benchmark 1: sudo ./target/release/seye_rs scan -md 50M -t 16 -tdl 6144 /run/media/pt/gen4_test/pt ./output
-  Time (mean ± σ):      1.367 s ±  0.013 s    [User: 0.004 s, System: 0.005 s]
-  Range (min … max):    1.338 s …  1.401 s    100 runs
+  Time (mean ± σ):      1.453 s ±  0.017 s    [User: 0.005 s, System: 0.004 s]
+  Range (min … max):    1.414 s …  1.511 s    100 runs
 ```
 The size of the initial scan is 169.7MB, a subsequent diff with one item added is 482B
 
@@ -71,8 +71,8 @@ The size of the initial scan is 169.7MB, a subsequent diff with one item added i
 The `find` command is still a WIP and doesn't have as many options for configuration as the competing [`fd`](https://github.com/sharkdp/fd) tool (also written in Rust), it's currently configured to match the behaviour of `fd`'s defaults as closely as possible. Despite that, the `find` command returns 6 more results than `fd`, so I need to refine it a bit more. The benchmark scores for `find` vs `fd` are, find:
 ```
 Benchmark 1: sudo ./target/release/seye_rs find -t 168 -tdl 6144 Document /run/media/pt/gen4_test/pt > b.txt
-  Time (mean ± σ):      74.8 ms ±   4.8 ms    [User: 4.6 ms, System: 4.5 ms]
-  Range (min … max):    63.4 ms …  92.8 ms    1000 runs
+  Time (mean ± σ):      73.6 ms ±   5.1 ms    [User: 4.7 ms, System: 4.5 ms]
+  Range (min … max):    60.5 ms … 101.2 ms    1000 runs
 ```
 fd:
 ```
