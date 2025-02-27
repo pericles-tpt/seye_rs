@@ -48,11 +48,11 @@ You can run the scans across multiple threads by settings the `-t` parameter >= 
 - Other Threads: Receive incoming paths, then walks directories iteratively up to a limit (specified with `-tdl` flag). Each directory's information is stored in a `CDirEntry` and the information for each file is also stored in the `CDirEntry`. All `CDirEntry` are stored in a vector managed by the thread which is returned on termination. Once the thread reaches its traversal limit it returns any remaining (i.e. not traversed) paths back to the main thread to redistribute.
 
 ### Current Performance (benchmarked with `hyperfine`) 
-NOTE: The target directory for the following tests was chosen as it is reasonably small and could be transferred to the slower, "System 2" quickly. Although my `find` command is slower than `fd` on "System 1", further testing on the larger, parent directory (`/run/media/pt/gen4_test/pt`) resulted in `find` performing better than `fd`, suggesting it might work better for larger file trees.
+NOTE: The target directory for the following tests was chosen as it is reasonably small and could be transferred to the slower, "System 2" quickly.
 
 #### System 1 (Desktop)
 - Ryzen 9800X3D (8C/16T, 96MB L3 cache)
-- 48GB (2x24GB DDR5 6000)
+- 48GB RAM (2x24GB DDR5 6000)
 - NM790 1TB Gen4 SSD
 
 ##### Scan (ran hyperfine with warmup=10)
@@ -91,7 +91,7 @@ Benchmark 1: ./target/release/seye_rs find -t 84 -tdl 2048 Document /run/media/p
 
 #### System 2 (Acer B115)
 - Intel N3530 (4C/4T, 2MB L3 Cache)
-- 4GB (1x4GB DDR3)
+- 4GB RAM (1x4GB DDR3)
 - 860 EVO 250GB SATA SSD
 
 NOTE: Since this is a passively cooled laptop, I waited 30 minutes between tests to allow the CPU to cool down
