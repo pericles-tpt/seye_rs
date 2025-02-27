@@ -58,29 +58,35 @@ NOTE: The target directory for the following tests was chosen as it is reasonabl
 ##### Scan (ran hyperfine with warmup=10)
 Performance results of scans without multithreading:
 ```
-Benchmark 1: ./target/release/seye_rs scan -md 50M /run/media/pt/gen4_test/pt/Documents ./output
-  Time (mean ± σ):      1.049 s ±  0.022 s    [User: 0.401 s, System: 0.645 s]
-  Range (min … max):    1.016 s …  1.109 s    100 runs
+Benchmark 1: ./target/release/seye_rs scan -md 50M /run/media/pt/gen4_test/pt/Documents/ ./output
+  Time (mean ± σ):      1.026 s ±  0.010 s    [User: 0.396 s, System: 0.627 s]
+  Range (min … max):    1.000 s …  1.055 s    100 runs
 ```
-The same test conditions as above with threads=16 and thread_directory_limit=6144:
+The same test with custom multithreading parameters:
 ```
-Benchmark 1: ./target/release/seye_rs scan -md 50M -t 16 -tdl 6144 /run/media/pt/gen4_test/pt/Documents ./output
-  Time (mean ± σ):     379.3 ms ±  21.3 ms    [User: 490.6 ms, System: 893.4 ms]
-  Range (min … max):   343.8 ms … 441.2 ms    100 runs
+Benchmark 1: ./target/release/seye_rs scan -md 50M -t 84 -tdl 640 /run/media/pt/gen4_test/pt/Documents/ ./output
+  Time (mean ± σ):     348.4 ms ±  11.8 ms    [User: 439.9 ms, System: 957.1 ms]
+  Range (min … max):   326.5 ms … 382.5 ms    100 runs
 ```
 
 ##### Find (ran hyperfine with warmup=250)
-find:
-```
-Benchmark 1: ./target/release/seye_rs find -t 168 -tdl 6144 Document /run/media/pt/gen4_test/pt/Documents > b.txt
-  Time (mean ± σ):      41.7 ms ±   3.6 ms    [User: 92.0 ms, System: 310.9 ms]
-  Range (min … max):    34.6 ms …  63.6 ms    1000 runs
-```
 fd:
 ```
-Benchmark 1: fd -I --color never Document /run/media/pt/gen4_test/pt/Documents > a.txt
-  Time (mean ± σ):      38.0 ms ±   2.8 ms    [User: 153.8 ms, System: 317.8 ms]
-  Range (min … max):    32.5 ms …  53.6 ms    1000 runs
+Benchmark 1: fd -I --color never Document /run/media/pt/gen4_test/pt/Documents/
+  Time (mean ± σ):      35.3 ms ±   1.3 ms    [User: 158.0 ms, System: 309.2 ms]
+  Range (min … max):    31.4 ms …  41.7 ms    1000 runs
+```
+find, same parameters as "System 2" (~5.38% faster than fd):
+```
+Benchmark 1: ./target/release/seye_rs find -t 84 -tdl 640 Document /run/media/pt/gen4_test/pt/Documents/
+  Time (mean ± σ):      33.4 ms ±   1.2 ms    [User: 85.1 ms, System: 324.3 ms]
+  Range (min … max):    30.6 ms …  40.5 ms    1000 runs
+```
+find, more optimal `-tdl` (~13.03% faster than fd)
+```
+Benchmark 1: ./target/release/seye_rs find -t 84 -tdl 2048 Document /run/media/pt/gen4_test/pt/Documents/
+  Time (mean ± σ):      30.7 ms ±   1.1 ms    [User: 79.7 ms, System: 297.9 ms]
+  Range (min … max):    28.2 ms …  37.5 ms    1000 runs
 ```
 
 #### System 2 (Acer B115)
@@ -88,26 +94,34 @@ Benchmark 1: fd -I --color never Document /run/media/pt/gen4_test/pt/Documents >
 - 4GB (1x4GB DDR3)
 - 860 EVO 250GB SATA SSD
 
-NOTE: Since this is a passively cooled laptop, I waited 5 minutes between tests to allow the CPU to cool down
+NOTE: Since this is a passively cooled laptop, I waited 30 minutes between tests to allow the CPU to cool down
 
 ##### Scan (ran hyperfine with warmup=10)
 Performance results of scans without multithreading:
 ```
-TODO:
+Benchmark 1: ./target/release/seye_rs scan -md 50M ~/Desktop/pt/Documents/ ./output
+  Time (mean ± σ):     13.360 s ±  0.083 s    [User: 5.686 s, System: 7.418 s]
+  Range (min … max):   13.215 s … 13.541 s    100 runs
 ```
-The same test conditions as above with threads=16 and thread_directory_limit=6144:
+The same test with custom multithreading parameters:
 ```
-TODO:
+Benchmark 1: ./target/release/seye_rs scan -md 50M -t 84 -tdl 640 ~/Desktop/pt/Documents/ ./output
+  Time (mean ± σ):      6.134 s ±  0.078 s    [User: 6.620 s, System: 7.991 s]
+  Range (min … max):    6.020 s …  6.417 s    100 runs
 ```
 
 ##### Find (ran hyperfine with warmup=250)
-find:
-```
-TODO:
-```
 fd:
 ```
-TODO:
+Benchmark 1: fd -I --color never Document ~/Desktop/pt/Documents/
+  Time (mean ± σ):      1.316 s ±  0.026 s    [User: 2.058 s, System: 2.702 s]
+  Range (min … max):    1.244 s …  1.402 s    1000 runs
+```
+find (~6.77% faster than fd):
+```
+Benchmark 1: ./target/release/seye_rs find -t 84 -tdl 640 Document ~/Desktop/pt/Documents/
+  Time (mean ± σ):      1.227 s ±  0.023 s    [User: 1.605 s, System: 2.772 s]
+  Range (min … max):    1.190 s …  1.358 s    1000 runs
 ```
 
 ## Usage
