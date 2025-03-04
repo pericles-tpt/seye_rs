@@ -274,10 +274,7 @@ pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, skip_set: &H
     return Ok(dir_q.drain(dIdx..).collect());
 }
 
-pub fn walk_search_until_limit(target: &String, some: &mut Vec<std::path::PathBuf>, skip_set: &HashSet<PathBuf>, other_entries: &mut Vec<String>, thread_readdir_limit: usize) -> std::io::Result<Vec<PathBuf>> {
-    let mut dIdx = 0;
-    let mut fIdx = 0;
-    
+pub fn walk_search_until_limit(target: &String, some: &mut Vec<std::path::PathBuf>, skip_set: &HashSet<PathBuf>, other_entries: &mut Vec<String>, thread_readdir_limit: usize, search_hidden: bool) -> std::io::Result<Vec<PathBuf>> {
     let mut readdir_limit = thread_readdir_limit;
     if readdir_limit < some.len() {
         readdir_limit = some.len();
@@ -317,11 +314,11 @@ pub fn walk_search_until_limit(target: &String, some: &mut Vec<std::path::PathBu
 
             let filename = val.file_name();
             let bn: &str = filename.to_str().unwrap();
-            if bn.starts_with(".") {
+            if !search_hidden && bn.starts_with(".") {
                 continue;
             }
+
             // let p_contains_substr = val.path().to_str().unwrap().contains(target);
-            fIdx += 1;
             if ft.is_dir() {
                 dir_q.push(val.path());
                 fIdx -= 1;

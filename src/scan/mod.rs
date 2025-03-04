@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, ffi::OsStr, fs::File, io::{BufWriter, Error}, mem, os::unix::fs::MetadataExt, path::PathBuf, time::SystemTime};
+use std::{collections::{HashMap, HashSet}, ffi::OsStr, fs::File, io::{BufWriter, Error}, mem, os::unix::fs::MetadataExt, path::PathBuf, time::{self, SystemTime}};
 use crate::{diff::{add_diffs_to_items, get_entry_from_dir_diff, merge_dir_diff_to_entry, CDirEntryDiff, DiffType}, utility::thread_from_root, walk::{walk_collect_until_limit, walk_search_until_limit}};
 use crate::{save::{add_dir_diffs, diff_saves, get_hash_iteration_count_from_file_names, read_diff_file, read_save_file}, walk::{walk_until_end, CDirEntry}};
 
@@ -15,7 +15,7 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
         let dummy_target = 1;
         let maybe_curr_scan = thread_from_root(target_path, skip_set, &dummy_target, num_threads, thread_add_dir_limit, Some(walk_collect_until_limit), None, |a: &CDirEntry, b: &CDirEntry| {
             return a.p.cmp(&b.p);
-        });
+        }, true);
         if maybe_curr_scan.is_err() {
             return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to do MT walk: {:?}", maybe_curr_scan.err())))
         }

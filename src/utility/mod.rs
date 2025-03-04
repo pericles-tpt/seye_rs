@@ -61,8 +61,9 @@ pub fn thread_from_root<T: Clone + std::marker::Send + 'static, U: std::marker::
     num_threads: usize, 
     num_thread_iterations_before_yield: usize,
     thread_collect_fn: Option<fn (input: &mut Vec<T>, skip_set: &HashSet<T>, output: &mut Vec<U>, limit: usize) -> std::io::Result<Vec<T>>>,
-    thread_find_fn: Option<fn (target: &V, input: &mut Vec<T>, skip_set: &HashSet<T>, output: &mut Vec<U>, limit: usize) -> std::io::Result<Vec<T>>>,
+    thread_find_fn: Option<fn (target: &V, input: &mut Vec<T>, skip_set: &HashSet<T>, output: &mut Vec<U>, limit: usize, search_hidden: bool) -> std::io::Result<Vec<T>>>,
     sort_output_items: fn (a: &U, b: &U) -> Ordering,
+    search_hidden: bool,
 ) -> std::io::Result<Vec<U>> {
     let mut res: Vec<U> = Vec::new();
 
@@ -72,7 +73,7 @@ pub fn thread_from_root<T: Clone + std::marker::Send + 'static, U: std::marker::
     if thread_collect_fn.is_some() {
         maybe_initial_items = thread_collect_fn.unwrap()(&mut initial_input, &skip_set, &mut res, num_thread_iterations_before_yield);
     } else {
-        maybe_initial_items = thread_find_fn.unwrap()(find_target, &mut initial_input, &skip_set, &mut res, num_thread_iterations_before_yield);
+        maybe_initial_items = thread_find_fn.unwrap()(find_target, &mut initial_input, &skip_set, &mut res, num_thread_iterations_before_yield, search_hidden);
     }
     if maybe_initial_items.is_err() {
         return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to read root path: {:?}", maybe_initial_items.err())))
@@ -106,7 +107,7 @@ pub fn thread_from_root<T: Clone + std::marker::Send + 'static, U: std::marker::
                     if thread_collect_fn.is_some() {
                         maybe_send_to_main = thread_collect_fn.unwrap()(&mut buf, &skip, &mut results, num_thread_iterations_before_yield);
                     } else {
-                        maybe_send_to_main = thread_find_fn.unwrap()(&target, &mut buf, &skip, &mut results, num_thread_iterations_before_yield);
+                        maybe_send_to_main = thread_find_fn.unwrap()(&target, &mut buf, &skip, &mut results, num_thread_iterations_before_yield, search_hidden);
                     }
                     if maybe_send_to_main.is_err() {
                         // TODO:
