@@ -130,21 +130,23 @@ pub fn thread_from_root<T: Clone + std::marker::Send + 'static, U: std::marker::
                         let send_res = thread_tx.send((TM_NO_PATHS, Vec::new()));
                         sent = !send_res.is_err();
                     }
+                    results.sort_by(sort_output_items);
                 }
 
                 let maybe_msg = thread_rx.recv();
-                if !maybe_msg.is_err() {
-                    let msg = maybe_msg.unwrap();
-                    match msg.0 {
-                        MT_EXIT => {
-                            break;
-                        }
-                        MT_NEW_PATHS => {
-                            let mut new_paths = msg.1;
-                            buf.append(&mut new_paths);
-                        }
-                        default => {}
+                if maybe_msg.is_err() {
+                    continue;
+                }
+                let msg = maybe_msg.unwrap();
+                match msg.0 {
+                    MT_EXIT => {
+                        break;
                     }
+                    MT_NEW_PATHS => {
+                        let mut new_paths = msg.1;
+                        buf.append(&mut new_paths);
+                    }
+                    default => {}
                 }
             }
             return results;
