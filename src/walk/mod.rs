@@ -279,15 +279,23 @@ pub fn walk_search_until_limit(target: &String, some: &mut Vec<std::path::PathBu
     if readdir_limit < some.len() {
         readdir_limit = some.len();
     }
-
+    
     let mut dir_q: Vec<PathBuf> = Vec::with_capacity(readdir_limit);
     dir_q.append(some);
-
+    
+    let mut dIdx = 0;
+    let mut fIdx = 0;
     while (fIdx + dIdx) < readdir_limit && dIdx < dir_q.len() {
         let rd = std::fs::read_dir(&dir_q[dIdx]);
         if rd.is_err() {
             // TODO: Handle error
             return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", rd.err())));
+        }
+
+        let bn = dir_q[dIdx].file_name().unwrap().to_str().unwrap();
+        if bn.contains(target) {
+            let p = dir_q[dIdx].as_path().as_os_str().to_str().unwrap();
+            other_entries.push(format!("{}/", p));
         }
 
         let entries: Vec<Result<DirEntry, std::io::Error>> = rd.unwrap().collect();
@@ -321,15 +329,12 @@ pub fn walk_search_until_limit(target: &String, some: &mut Vec<std::path::PathBu
             // let p_contains_substr = val.path().to_str().unwrap().contains(target);
             if ft.is_dir() {
                 dir_q.push(val.path());
-                fIdx -= 1;
+                continue;
             }
-
+            
+            fIdx += 1;
             if bn.contains(target) {
-                let mut s = val.path().into_os_string().into_string().unwrap();
-                if ft.is_dir() {
-                    s = format!("{}/", s)
-                }
-                other_entries.push(s);
+                other_entries.push(val.path().into_os_string().into_string().unwrap());
             }
         }        
 
