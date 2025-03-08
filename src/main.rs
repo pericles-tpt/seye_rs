@@ -12,8 +12,10 @@ extern crate lazy_static;
 extern crate libc;
 
 use std::collections::HashSet;
+use std::fs::read_dir;
 use std::io::Write;
 use std::num::ParseIntError;
+use std::path::Path;
 use std::{collections::HashMap, path::PathBuf};
 use std::env;
 use report::report_changes;
@@ -39,7 +41,7 @@ lazy_static! {
     static ref VALID_COMMAND_OPTIONS: HashMap<&'static str, HashSet<&'static str>> = {
         let mut map = HashMap::new();
         map.insert("scan", HashSet::from_iter(vec!["-p", "-md", "-t", "-tdl"]));
-        map.insert("find", HashSet::from_iter(vec!["-t", "-tdl", "-h"]));
+        map.insert("find", HashSet::from_iter(vec!["-t", "-tdl", "-h", "-s"]));
         map
     };
 }
@@ -92,7 +94,8 @@ fn main() {
             let mut min_diff_bytes: i64 = 0;
             let mut thread_add_dir_limit = 256;
             let mut scan_hidden = true;
-            let arg_eval_res = eval_optional_args("scan", optional_args, &mut show_perf_info, &mut memory_limit, &mut min_diff_bytes, &mut num_threads, &mut thread_add_dir_limit, &mut scan_hidden);
+            let mut sorted = false;
+            let arg_eval_res = eval_optional_args("scan", optional_args, &mut show_perf_info, &mut memory_limit, &mut min_diff_bytes, &mut num_threads, &mut thread_add_dir_limit, &mut scan_hidden, &mut sorted);
             if arg_eval_res.is_err() {
                 eprintln!("invalid argument provided: {}", arg_eval_res.err().unwrap());
                 return;
@@ -171,7 +174,8 @@ fn main() {
             let mut min_diff_bytes: i64 = 0;
             let mut thread_add_dir_limit = 512;
             let mut search_hidden = false;
-            let arg_eval_res = eval_optional_args("find", optional_args, &mut show_perf_info, &mut memory_limit, &mut min_diff_bytes, &mut num_threads, &mut thread_add_dir_limit, &mut search_hidden);
+            let mut sorted = false;
+            let arg_eval_res = eval_optional_args("find", optional_args, &mut show_perf_info, &mut memory_limit, &mut min_diff_bytes, &mut num_threads, &mut thread_add_dir_limit, &mut search_hidden, &mut sorted);
             if arg_eval_res.is_err() {
                 eprintln!("invalid argument provided: {}", arg_eval_res.err().unwrap());
                 return;
@@ -190,13 +194,15 @@ fn main() {
             let target_pb = maybe_target_pb.unwrap();
             
 
-            let res = find(target_substring.clone(), target_pb, num_threads, thread_add_dir_limit, search_hidden);
+            let res = find(target_substring.clone(), target_pb, num_threads, thread_add_dir_limit, search_hidden, sorted);
             match res {
                 Ok(entries) => {
-                    let output_str = format!("{}\n", entries.join("\n"));
-                    let res = std::io::stdout().write(output_str.as_bytes());
-                    if res.is_err() {
-                        eprint!("failed to write `find` results to stdout: {:?}", res.err());
+                    if sorted {
+                        let output_str = format!("{}\n", entries.join("\n"));
+                        let res = std::io::stdout().write(output_str.as_bytes());
+                        if res.is_err() {
+                            eprint!("failed to write `find` results to stdout: {:?}", res.err());
+                        }
                     }
                 }
                 Err(e) => {
@@ -278,7 +284,7 @@ fn validate_get_pathbuf(p: &String) -> std::io::Result<PathBuf> {
     return Ok(PathBuf::from(&p));
 }
 
-fn eval_optional_args(cmd: &str, args: Vec<&&String>, show_perf_info: &mut bool, memory_limit: &mut usize, min_diff_bytes: &mut i64, num_threads: &mut usize, thread_add_dir_limit: &mut usize, show_hidden: &mut bool) -> std::io::Result<()> {    
+fn eval_optional_args(cmd: &str, args: Vec<&&String>, show_perf_info: &mut bool, memory_limit: &mut usize, min_diff_bytes: &mut i64, num_threads: &mut usize, thread_add_dir_limit: &mut usize, show_hidden: &mut bool, sorted: &mut bool) -> std::io::Result<()> {    
     let mut i = 0;
     while i < args.len() {
         let before_directory_args = i < args.len() - 2;
@@ -361,6 +367,9 @@ fn eval_optional_args(cmd: &str, args: Vec<&&String>, show_perf_info: &mut bool,
                 match a {
                     "-h" => {
                         *show_hidden = true;
+                    }
+                    "-s" => {
+                        *sorted = true;
                     }
                     _ => {is_no_val_opt = false;}
                 }
