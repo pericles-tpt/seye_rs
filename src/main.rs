@@ -20,6 +20,7 @@ use report::report_changes;
 use scan::scan;
 use find::find;
 use utility::MEGABYTE;
+use regex::Regex;
 
 const HELP_TEXT: &str = "usage: seye scan [OPTION]... [SCAN TARGET DIRECTORY] [SCAN SAVE FILE DIRECTORY]
 usage: seye report [SCAN TARGET DIRECTORY] [SCAN SAVE FILE DIRECTORY]
@@ -54,6 +55,20 @@ fn main() {
     let cmd = args[1].as_str();
     let params: Vec<_> = args.iter().skip(2).collect();
     match cmd {
+        "pvf" =>  {
+            let p = Path::new("/run/media/pt/gen4_test/pt/Documents");
+            let maybe_rx = Regex::new("Document");
+            if maybe_rx.is_err() {
+                return;
+            }
+            let show_hidden = true;
+            let rx = maybe_rx.unwrap();
+            let fns = p.file_name().unwrap().to_str().unwrap();
+            if (show_hidden || !fns.contains(r"/.")) && rx.is_match(fns) {
+                println!("{}", p.display());
+            }
+            let _ = par_find(p, &rx, show_hidden);
+        }
         "scan" => {
             let mut is_root_msg = "NOT ";
             if is_root {
@@ -416,4 +431,25 @@ fn get_bytes_from_arg(a: &String) -> std::io::Result<usize> {
         ret *= 1024;
     } 
     Ok(ret)
+}
+
+// CODE SOURCE: https://gist.github.com/pervognsen/c439beb6014c8c59c924aee237e1e97e
+// CONTEXT: https://mastodon.social/@pervognsen/110739397974530013
+fn par_find(dir: &Path, rx: &Regex, show_hidden: bool) {
+    rayon::scope(|scope| {
+        let Ok(entries) = read_dir(dir) else { return };
+        for entry in entries {
+            let Ok(entry) = entry else { continue };
+            let Ok(file_type) = entry.file_type() else { continue };
+            let path = entry.path();
+            
+            let fns = path.file_name().unwrap().to_str().unwrap();
+            if (show_hidden || !fns.contains(r"/.")) && rx.is_match(fns) {
+                println!("{}", path.display());
+            }
+            if file_type.is_dir() && !file_type.is_symlink() {
+                scope.spawn(move |_| par_find(&path, rx, show_hidden));
+            }
+        }
+    });
 }
