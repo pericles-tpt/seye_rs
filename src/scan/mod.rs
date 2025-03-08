@@ -15,7 +15,7 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
         let dummy_target = 1;
         let maybe_curr_scan = thread_from_root(target_path, skip_set, &dummy_target, num_threads, thread_add_dir_limit, Some(walk_collect_until_limit), None, |a: &CDirEntry, b: &CDirEntry| {
             return a.p.cmp(&b.p);
-        }, true);
+        });
         if maybe_curr_scan.is_err() {
             return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to do MT walk: {:?}", maybe_curr_scan.err())))
         }

@@ -1,4 +1,5 @@
-use std::{cmp::Ordering, collections::HashSet, num, path::PathBuf, sync::mpsc, thread::JoinHandle};
+use std::{cmp::Ordering, collections::HashSet, io::Write, path::PathBuf, sync::mpsc, thread::JoinHandle, time::Duration};
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
 pub const KILOBYTE: usize = 1024;
 pub const MEGABYTE: usize = KILOBYTE * 1024;
@@ -61,9 +62,8 @@ pub fn thread_from_root<T: Clone + std::marker::Send + 'static, U: std::marker::
     num_threads: usize, 
     num_thread_iterations_before_yield: usize,
     thread_collect_fn: Option<fn (input: &mut Vec<T>, skip_set: &HashSet<T>, output: &mut Vec<U>, limit: usize) -> std::io::Result<Vec<T>>>,
-    thread_find_fn: Option<fn (target: &V, input: &mut Vec<T>, skip_set: &HashSet<T>, output: &mut Vec<U>, limit: usize, search_hidden: bool) -> std::io::Result<Vec<T>>>,
+    thread_find_fn: Option<fn (target: &V, input: &mut Vec<T>, skip_set: &HashSet<T>, output: &mut Vec<U>, limit: usize) -> std::io::Result<Vec<T>>>,
     sort_output_items: fn (a: &U, b: &U) -> Ordering,
-    search_hidden: bool,
 ) -> std::io::Result<Vec<U>> {
     let mut res: Vec<U> = Vec::new();
 
@@ -73,14 +73,9 @@ pub fn thread_from_root<T: Clone + std::marker::Send + 'static, U: std::marker::
     if thread_collect_fn.is_some() {
         maybe_initial_items = thread_collect_fn.unwrap()(&mut initial_input, &skip_set, &mut res, num_thread_iterations_before_yield);
     } else {
-        maybe_initial_items = thread_find_fn.unwrap()(find_target, &mut initial_input, &skip_set, &mut res, num_thread_iterations_before_yield, search_hidden);
+        maybe_initial_items = thread_find_fn.unwrap()(find_target, &mut initial_input, &skip_set, &mut res, num_thread_iterations_before_yield);
     }
-    if maybe_initial_items.is_err() {
-        return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to read root path: {:?}", maybe_initial_items.err())))
-    }
-    let mut initial_output = maybe_initial_items.unwrap();
-    let mut paths_to_distribute: Vec<T> = Vec::with_capacity(initial_output.len());
-    paths_to_distribute.append(&mut initial_output);
+    let Ok(mut paths_to_distribute) = maybe_initial_items else { return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to read root path: {:?}", maybe_initial_items.err()))) };
     
     // Spin up threads to, iterate over items and inform main if: they have excess paths to return OR they're done
     let mut thread_handles: Vec<JoinHandle<Vec<U>>> = Vec::with_capacity(num_threads);
@@ -107,13 +102,9 @@ pub fn thread_from_root<T: Clone + std::marker::Send + 'static, U: std::marker::
                     if thread_collect_fn.is_some() {
                         maybe_send_to_main = thread_collect_fn.unwrap()(&mut buf, &skip, &mut results, num_thread_iterations_before_yield);
                     } else {
-                        maybe_send_to_main = thread_find_fn.unwrap()(&target, &mut buf, &skip, &mut results, num_thread_iterations_before_yield, search_hidden);
+                        maybe_send_to_main = thread_find_fn.unwrap()(&target, &mut buf, &skip, &mut results, num_thread_iterations_before_yield);
                     }
-                    if maybe_send_to_main.is_err() {
-                        // TODO:
-                    }
-
-                    let new_paths = maybe_send_to_main.unwrap();
+                    let Ok(new_paths) = maybe_send_to_main else {continue};
                     new_paths_len = new_paths.len();
                     if new_paths_len > 0 {
                         let mut sent = false;
@@ -130,14 +121,9 @@ pub fn thread_from_root<T: Clone + std::marker::Send + 'static, U: std::marker::
                         let send_res = thread_tx.send((TM_NO_PATHS, Vec::new()));
                         sent = !send_res.is_err();
                     }
-                    results.sort_by(sort_output_items);
                 }
 
-                let maybe_msg = thread_rx.recv();
-                if maybe_msg.is_err() {
-                    continue;
-                }
-                let msg = maybe_msg.unwrap();
+                let Ok(msg) = thread_rx.recv() else {continue};
                 match msg.0 {
                     MT_EXIT => {
                         break;
@@ -149,6 +135,7 @@ pub fn thread_from_root<T: Clone + std::marker::Send + 'static, U: std::marker::
                     default => {}
                 }
             }
+
             return results;
         });
         thread_handles.push(hndl);
@@ -160,14 +147,9 @@ pub fn thread_from_root<T: Clone + std::marker::Send + 'static, U: std::marker::
         // Check for messages from other friends to determine if: paths returned OR no excess paths
         let mut all_threads_stopped = true;
         for ti in 0..thread_to_m_chans.len() {
-            let maybe_msg = thread_to_m_chans[ti].1.try_recv();
-            let busy = maybe_msg.is_err();
-            if busy {
-                continue
-            }
+            let Ok(msg) = thread_to_m_chans[ti].1.try_recv() else {continue};
 
             ready_thread_idxs.push(ti);
-            let msg = maybe_msg.unwrap();
             if msg.0 == TM_NEW_PATHS {
                 let mut new_paths = msg.1;
                 paths_to_distribute.append(&mut new_paths);
