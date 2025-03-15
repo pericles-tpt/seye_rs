@@ -1,7 +1,6 @@
 mod walk;
 mod save;
 mod scan;
-mod find;
 mod diff;
 mod report;
 mod utility;
@@ -20,7 +19,6 @@ use std::{collections::HashMap, path::PathBuf};
 use std::env;
 use report::report_changes;
 use scan::scan;
-use find::find;
 use utility::MEGABYTE;
 use regex::Regex;
 
@@ -57,20 +55,6 @@ fn main() {
     let cmd = args[1].as_str();
     let params: Vec<_> = args.iter().skip(2).collect();
     match cmd {
-        "pvf" =>  {
-            let p = Path::new("/run/media/pt/gen4_test/pt/Documents");
-            let maybe_rx = Regex::new("Document");
-            if maybe_rx.is_err() {
-                return;
-            }
-            let show_hidden = true;
-            let rx = maybe_rx.unwrap();
-            let fns = p.file_name().unwrap().to_str().unwrap();
-            if (show_hidden || !fns.contains(r"/.")) && rx.is_match(fns) {
-                println!("{}", p.display());
-            }
-            let _ = par_find(p, &rx, show_hidden);
-        }
         "scan" => {
             let mut is_root_msg = "NOT ";
             if is_root {
@@ -154,59 +138,6 @@ fn main() {
                 }
                 Err(e) => {
                     eprintln!("error occured while scanning: {}", e);
-                }
-            }
-        }
-        "find" => {
-            if params.len() < 2 {
-                eprintln!("insufficient arguments for `find`, expected at least [TARGET SUBSTING] and [ROOT FIND DIRECTORY]");
-                return;
-            }
-            let optional_args: Vec<_> = params.iter().collect();
-
-            let num_args = optional_args.len();
-
-            // Get optional params
-            let mut num_threads = 0;
-            let mut memory_limit: usize = 0;
-            // let mut is_recursive = false;
-            let mut show_perf_info = false;
-            let mut min_diff_bytes: i64 = 0;
-            let mut thread_add_dir_limit = 512;
-            let mut search_hidden = false;
-            let mut sorted = false;
-            let arg_eval_res = eval_optional_args("find", optional_args, &mut show_perf_info, &mut memory_limit, &mut min_diff_bytes, &mut num_threads, &mut thread_add_dir_limit, &mut search_hidden, &mut sorted);
-            if arg_eval_res.is_err() {
-                eprintln!("invalid argument provided: {}", arg_eval_res.err().unwrap());
-                return;
-            }
-            
-            // Get target substring
-            let target_substring = params[num_args - 2];
-            
-            // Get target directory
-            let maybe_target_str = params[num_args - 1];
-            let maybe_target_pb = validate_get_pathbuf(maybe_target_str);
-            if maybe_target_pb.is_err() {
-                eprintln!("invalid target path provided: {}", maybe_target_pb.err().unwrap());
-                return;
-            }
-            let target_pb = maybe_target_pb.unwrap();
-            
-
-            let res = find(target_substring.clone(), target_pb, num_threads, thread_add_dir_limit, search_hidden, sorted);
-            match res {
-                Ok(entries) => {
-                    if sorted {
-                        let output_str = format!("{}\n", entries.join("\n"));
-                        let res = std::io::stdout().write(output_str.as_bytes());
-                        if res.is_err() {
-                            eprint!("failed to write `find` results to stdout: {:?}", res.err());
-                        }
-                    }
-                }
-                Err(e) => {
-                    eprintln!("error occured while reporting: {}", e);
                 }
             }
         }
@@ -440,25 +371,4 @@ fn get_bytes_from_arg(a: &String) -> std::io::Result<usize> {
         ret *= 1024;
     } 
     Ok(ret)
-}
-
-// CODE SOURCE: https://gist.github.com/pervognsen/c439beb6014c8c59c924aee237e1e97e
-// CONTEXT: https://mastodon.social/@pervognsen/110739397974530013
-fn par_find(dir: &Path, rx: &Regex, show_hidden: bool) {
-    rayon::scope(|scope| {
-        let Ok(entries) = read_dir(dir) else { return };
-        for entry in entries {
-            let Ok(entry) = entry else { continue };
-            let Ok(file_type) = entry.file_type() else { continue };
-            let path = entry.path();
-            
-            let fns = path.file_name().unwrap().to_str().unwrap();
-            if (show_hidden || !fns.contains(r"/.")) && rx.is_match(fns) {
-                println!("{}", path.display());
-            }
-            if file_type.is_dir() && !file_type.is_symlink() {
-                scope.spawn(move |_| par_find(&path, rx, show_hidden));
-            }
-        }
-    });
 }
