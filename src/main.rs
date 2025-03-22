@@ -5,14 +5,8 @@ mod diff;
 mod report;
 mod utility;
 
-#[macro_use]
-extern crate lazy_static;
-
 extern crate libc;
 
-use std::collections::HashSet;
-use std::fs::read_dir;
-use std::io::Write;
 use std::num::ParseIntError;
 use std::path::Path;
 use std::{collections::HashMap, path::PathBuf};
@@ -35,15 +29,6 @@ usage: seye find [TARGET SUBSTRING] [ROOT FIND DIRECTORY]
 
 const MIN_MEMORY_LIMIT: usize = 10 * MEGABYTE;
 
-lazy_static! {
-    static ref VALID_COMMAND_OPTIONS: HashMap<&'static str, HashSet<&'static str>> = {
-        let mut map = HashMap::new();
-        map.insert("scan", HashSet::from_iter(vec!["-p", "-md", "-t", "-tdl"]));
-        map.insert("find", HashSet::from_iter(vec!["-t", "-tdl", "-h", "-s"]));
-        map
-    };
-}
-
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() == 0 || args[0].len() == 0 {
@@ -54,6 +39,7 @@ fn main() {
     let is_root = unsafe { libc::geteuid() == 0 };
     let cmd = args[1].as_str();
     let params: Vec<_> = args.iter().skip(2).collect();
+    let valid_commands_options = vec!["-p", "-md", "-t", "-tdl"];
     match cmd {
         "scan" => {
             let mut is_root_msg = "NOT ";
@@ -199,8 +185,7 @@ fn main() {
             println!("{}", HELP_TEXT)
         }
         _ => {
-            let valid_commands: Vec<&str> = VALID_COMMAND_OPTIONS.keys().map(|k| {*k}).collect();
-            eprintln!("invalid command '{}' provided, must be one of: {}", cmd, valid_commands.join(", "));
+            eprintln!("invalid command '{}' provided, must be one of: {}", cmd, valid_commands_options.join(", "));
             return;
         }
     }
@@ -217,11 +202,12 @@ fn validate_get_pathbuf(p: &String) -> std::io::Result<PathBuf> {
 
 fn eval_optional_args(cmd: &str, args: Vec<&&String>, show_perf_info: &mut bool, memory_limit: &mut usize, min_diff_bytes: &mut i64, num_threads: &mut usize, thread_add_dir_limit: &mut usize, show_hidden: &mut bool, sorted: &mut bool) -> std::io::Result<()> {    
     let mut i = 0;
+    let valid_command_options = vec!["-p", "-md", "-t", "-fdl"];
     while i < args.len() {
         let before_directory_args = i < args.len() - 2;
         let a = args[i].as_str();
-        if before_directory_args && !VALID_COMMAND_OPTIONS.get(cmd).unwrap().contains(a) {
-            let valid_params: Vec<_> = VALID_COMMAND_OPTIONS.get(cmd).unwrap().clone().into_iter().collect();
+        if before_directory_args && !valid_command_options.contains(&a) {
+            let valid_params: Vec<_> = valid_command_options.clone().into_iter().collect();
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("invalid parameter '{}' provided for {} command, must be one of: {}", a, cmd, valid_params.join(", "))));
         }
     
@@ -321,7 +307,7 @@ fn eval_optional_args(cmd: &str, args: Vec<&&String>, show_perf_info: &mut bool,
                         }
                         *num_threads = maybe_threads.unwrap();
                     }
-                    "-tdl" => {
+                    "-fdl" => {
                         let maybe_thread_add_dir_limit: Result<usize, ParseIntError> = args[i].parse();
                         if maybe_thread_add_dir_limit.is_err() || maybe_thread_add_dir_limit.clone().unwrap() < 1 {
                             return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid thread add dir limit argument, must be a non-negative integer"));
