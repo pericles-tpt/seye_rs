@@ -1,8 +1,7 @@
 extern crate queues;
-use std::os::unix::ffi::OsStrExt;
+use std::fs::metadata;
 use std::{ffi::OsString, fs::DirEntry, os::unix::fs::MetadataExt, time::SystemTime};
 use std::{collections::{HashMap, HashSet}, fs::{symlink_metadata, Metadata}, path::PathBuf, time::Duration};
-use regex::bytes::Regex;
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -11,6 +10,7 @@ pub struct FileEntry {
     pub sz: u64,
     pub md: Option<SystemTime>,
     pub hash: [u8; 32],
+    pub is_symlink: bool,
 }
 impl Default for FileEntry {
     fn default() -> Self {
@@ -19,6 +19,7 @@ impl Default for FileEntry {
             sz: 0,
             md: None,
             hash: [0; 32],
+            is_symlink: false,
         }
     }
 }
@@ -72,15 +73,6 @@ where
 //     #[serde(deserialize_with = "deserialize_boxed_slice")]
 //     pub files: Box<[FileEntry]>,
 // }
-
-
-lazy_static! {
-    static ref IGNORE_LIST: HashSet<&'static std::ffi::OsStr> = {
-        let mut set = HashSet::new();
-        set.insert(std::ffi::OsStr::new(".DS_Store"));
-        set
-    };
-}
 
 // NOTE: `memory_usage` calculations are up to 10% LOWER than observed memory usage. This offset is applied to `memory_usage` props to provide more useful memory usage 
 //       information to the user
@@ -136,11 +128,16 @@ pub fn walk_until_end(root: std::path::PathBuf, parent_map: &mut HashMap<std::pa
 
         let mut file_entries: Vec<FileEntry> = Vec::with_capacity(entries.len());
         for ent in entries {
-            if ent.is_err() {
-                // TODO: Handle error
+            let Ok(val) = ent else { continue };
+            let Ok(ft) = val.file_type() else { continue };
+
+            // if IGNORE_LIST.contains(basename) {
+            //     continue;
+            // }
+
+            if ft.is_symlink() {
                 continue;
             }
-            let val = ent.unwrap();
 
             let p = &val.path();
             let maybe_basename = p.file_name();
@@ -148,21 +145,7 @@ pub fn walk_until_end(root: std::path::PathBuf, parent_map: &mut HashMap<std::pa
                 continue;
             }
             let basename = maybe_basename.unwrap();
-            if IGNORE_LIST.contains(basename) {
-                continue;
-            }
 
-            let maybe_ft = val.file_type();
-            if maybe_ft.is_err() {
-                // TODO: Error
-                continue;
-            }
-            let ft = maybe_ft.unwrap();
-
-            if ft.is_symlink() {
-                continue;
-            }
-            
             if ft.is_dir() {
                 let _ = v.push(p.to_path_buf());
                 continue 
@@ -224,41 +207,26 @@ pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, skip_set: &H
         let entries: Vec<Result<DirEntry, std::io::Error>> = rd.unwrap().collect();
         let mut file_entries: Vec<FileEntry> = Vec::with_capacity(entries.len());
         for ent in entries {
-            if ent.is_err() {
-                continue;
-            }
-            let val = ent.unwrap();
+            let Ok(val) = ent else { continue };
+            let Ok(ft) = val.file_type() else { continue };
             // NOTE: This was commented out as it has a BIG impact on performance
             // if skip_set.contains(&val.path()) {
             //     continue;
             // }
     
-            let filename = val.file_name();
-            if IGNORE_LIST.contains(filename.as_os_str()) {
-                continue 
-            }
-            
-            let maybe_ft = val.file_type();
-            if maybe_ft.is_err() {
+            // if IGNORE_LIST.contains(filename.as_os_str()) {
+            //     continue 
+            // }
+                
+            if ft.is_dir() {
+                dir_q.push(val.path());
                 continue;
             }
-            let ft = maybe_ft.unwrap();
-            if !ft.is_file() {
-                if ft.is_dir() {
-                    dir_q.push(val.path());
-                }
-                continue;
-            }
-    
-            let maybe_fmd = symlink_metadata(val.path());
-            if maybe_fmd.is_err() {
-                // TODO: Handle error
-                continue;
-            }
-            let fmd = maybe_fmd.unwrap();
 
+            let Ok(fmd) = metadata(val.path()) else {continue};    
+                
             fIdx += 1;
-    
+            let filename = val.file_name();
             let filename_len = filename.len();
             insert_file_entry(&fmd, filename, &mut file_entries);
     
@@ -285,7 +253,8 @@ fn insert_file_entry(md: &Metadata, bn: OsString, dest: &mut Vec<FileEntry>) -> 
         bn: bn,
         sz: md.len(),
         md: t,
-        hash: [0; 32]
+        hash: [0; 32],
+        is_symlink: md.is_symlink()
     };
     dest.push(e);
     return dest.len() - 1;
