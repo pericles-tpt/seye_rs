@@ -8,25 +8,14 @@ mod utility;
 extern crate libc;
 
 use std::num::ParseIntError;
-use std::path::Path;
-use std::{collections::HashMap, path::PathBuf};
+use std::path::PathBuf;
 use std::env;
 use report::report_changes;
 use scan::scan;
 use utility::MEGABYTE;
-use regex::Regex;
 
-const HELP_TEXT: &str = "usage: seye scan [OPTION]... [SCAN TARGET DIRECTORY] [SCAN SAVE FILE DIRECTORY]
-usage: seye report [SCAN TARGET DIRECTORY] [SCAN SAVE FILE DIRECTORY]
-usage: seye find [TARGET SUBSTRING] [ROOT FIND DIRECTORY]
-------- Basic options -------
---help      Print usage and this help message and exit.
-------- Scan options  -------
--p          Show performance statistics after scan
--md         (default: 0) Specify the minimum size difference to include in diffs, can specify one of: n, nK, nM or nG, e.g. 1M
--t          (default: 0) Specify the number of threads (must be > 1, otherwise num_threads is set to 0)
--tdl        (default: 256) Specify the minimum number of READDIRs per thread (if not enough dirs are found, this is ignored)";
-
+const DEFAULT_NUM_THREADS: usize = 84;
+const DEFAULT_FD_LIMIT: usize = 2048;
 const MIN_MEMORY_LIMIT: usize = 10 * MEGABYTE;
 
 fn main() {
@@ -57,12 +46,12 @@ fn main() {
 
             // Get optional params
             // NOTE: memory_limit == 0 -> no limit
-            let mut num_threads = 0;
+            let mut num_threads = DEFAULT_NUM_THREADS; //0;
             let mut memory_limit: usize = 0;
             // let mut is_recursive = false;
             let mut show_perf_info = false;
             let mut min_diff_bytes: i64 = 0;
-            let mut thread_add_dir_limit = 256;
+            let mut thread_add_dir_limit = DEFAULT_FD_LIMIT; //256;
             let mut scan_hidden = true;
             let mut sorted = false;
             let arg_eval_res = eval_optional_args("scan", optional_args, &mut show_perf_info, &mut memory_limit, &mut min_diff_bytes, &mut num_threads, &mut thread_add_dir_limit, &mut scan_hidden, &mut sorted);
@@ -182,7 +171,7 @@ fn main() {
             }
         }
         "--help" => {
-            println!("{}", HELP_TEXT)
+            print_help_text();
         }
         _ => {
             eprintln!("invalid command '{}' provided, must be one of: {}", cmd, valid_commands_options.join(", "));
@@ -357,4 +346,23 @@ fn get_bytes_from_arg(a: &String) -> std::io::Result<usize> {
         ret *= 1024;
     } 
     Ok(ret)
+}
+
+fn print_help_text() {
+    println!("Pretty Fast Scan, scans for items in your filesystem. It (mostly) performs best with NO optional args.
+
+Usage: pfs scan [options] [pattern] [path]
+       pfs report [options] [pattern] [path]
+Scan Arguments:
+    --help                                  Prints help
+    --version                               Prints version
+
+    -p                                      Show performance statistics after scan
+    -md                   (default: 0    )  Specify the minimum size difference to include in diffs, can specify one of: n, nK, nM or nG, e.g. 1M
+    
+    -t   <num>            (default:    {})  Specify the number of threads, MUST BE >= 2
+    -fdl <num>            (default:  {})  Specify the maximum 'files + dirs' to traverse before returning
+                                            results from each thread
+
+", DEFAULT_NUM_THREADS, DEFAULT_FD_LIMIT);
 }
