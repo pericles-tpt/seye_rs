@@ -6,29 +6,28 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct FileEntry {
-    pub bn: OsString,
     pub sz: u64,
-    pub md: Option<SystemTime>,
     pub hash: [u8; 32],
     pub is_symlink: bool,
+
+    pub bn: OsString,
+    pub md: Option<SystemTime>,
 }
 impl Default for FileEntry {
     fn default() -> Self {
         FileEntry {
-            bn: OsString::new(),
             sz: 0,
-            md: None,
             hash: [0; 32],
             is_symlink: false,
+
+            bn: OsString::new(),
+            md: None,
         }
     }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct CDirEntry {
-    pub p: PathBuf,
-    pub md: Option<SystemTime>,
-
     pub files_here: usize,
     pub files_below: usize,
     pub dirs_here: usize,
@@ -37,6 +36,9 @@ pub struct CDirEntry {
     pub size_below: i64,
     pub memory_usage_here: usize,
     pub memory_usage_below: usize,
+    
+    pub p: PathBuf,
+    pub md: Option<SystemTime>,
 
     #[serde(deserialize_with = "deserialize_boxed_slice")]
     pub files: Box<[FileEntry]>,
@@ -74,18 +76,14 @@ where
 //     pub files: Box<[FileEntry]>,
 // }
 
-// NOTE: `memory_usage` calculations are up to 10% LOWER than observed memory usage. This offset is applied to `memory_usage` props to provide more useful memory usage 
-//       information to the user
-const MEMORY_OFF_FACTOR: f64 = 1.1;
-
 pub fn walk_until_end(root: std::path::PathBuf, parent_map: &mut HashMap<std::path::PathBuf, usize>, skip_set: &mut HashSet<PathBuf>) -> std::vec::Vec<CDirEntry> {
     let mut df: std::vec::Vec<CDirEntry> = Vec::new();
     let mut v: Vec<std::path::PathBuf> = Vec::new();
 
     let mut total_time_stat = Duration::new(0, 0);
-    let mut sc = 0;
+    // let mut sc = 0;
     let mut total_time_readdir = Duration::new(0, 0);
-    let mut rdc = 0;
+    // let mut rdc = 0;
 
     // Stage 1. Traverse file tree and add to list
     // Push root onto stack
@@ -106,7 +104,7 @@ pub fn walk_until_end(root: std::path::PathBuf, parent_map: &mut HashMap<std::pa
         let rd = std::fs::read_dir(mp);
         let trd = bef1.elapsed();
         total_time_readdir += trd;
-        rdc += 1;
+        // rdc += 1;
 
         if rd.is_err() {
             // TODO: Handle error
@@ -118,7 +116,7 @@ pub fn walk_until_end(root: std::path::PathBuf, parent_map: &mut HashMap<std::pa
         let maybe_md = symlink_metadata(mp);
         let ts = bef2.elapsed();
         total_time_stat += ts;
-        sc += 1;
+        // sc += 1;
         if maybe_md.is_err() {
             // TODO: Handle error
             continue;
@@ -155,7 +153,7 @@ pub fn walk_until_end(root: std::path::PathBuf, parent_map: &mut HashMap<std::pa
             let maybe_fmd = symlink_metadata(p);
             let ts = bef2.elapsed();
             total_time_stat += ts;
-            sc += 1;
+            // sc += 1;
             if maybe_fmd.is_err() {
                 // TODO: Handle error
                 continue;
@@ -178,9 +176,9 @@ pub fn walk_until_end(root: std::path::PathBuf, parent_map: &mut HashMap<std::pa
     return df;
 }
 
-pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, skip_set: &HashSet<PathBuf>, other_entries: &mut Vec<CDirEntry>, thread_readdir_limit: usize) -> std::io::Result<Vec<PathBuf>> {
-    let mut dIdx = 0;
-    let mut fIdx = 0;
+pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, _skip_set: &HashSet<PathBuf>, other_entries: &mut Vec<CDirEntry>, thread_readdir_limit: usize) -> std::io::Result<Vec<PathBuf>> {
+    let mut d_idx = 0;
+    let mut f_idx = 0;
     
     let mut readdir_limit = thread_readdir_limit;
     if readdir_limit < some.len() {
@@ -191,19 +189,19 @@ pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, skip_set: &H
     dir_q.append(some);
 
     let mut pm = HashMap::new();
-    while (dIdx + fIdx) < readdir_limit && dIdx < dir_q.len() {
-        let rd = std::fs::read_dir(&dir_q[dIdx]);
+    while (d_idx + f_idx) < readdir_limit && d_idx < dir_q.len() {
+        let rd = std::fs::read_dir(&dir_q[d_idx]);
         if rd.is_err() {
             return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", rd.err())));
         }
 
-        let maybe_md = symlink_metadata(&dir_q[dIdx]);
+        let maybe_md = symlink_metadata(&dir_q[d_idx]);
         if maybe_md.is_err() {
             return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", maybe_md.err())));
         }
         let md = maybe_md.unwrap();
 
-        let curr_idx = insert_dir_entry(&md, &dir_q[dIdx], other_entries, &mut pm);
+        let curr_idx = insert_dir_entry(&md, &dir_q[d_idx], other_entries, &mut pm);
         let entries: Vec<Result<DirEntry, std::io::Error>> = rd.unwrap().collect();
         let mut file_entries: Vec<FileEntry> = Vec::with_capacity(entries.len());
         for ent in entries {
@@ -225,7 +223,7 @@ pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, skip_set: &H
 
             let Ok(fmd) = metadata(val.path()) else {continue};    
                 
-            fIdx += 1;
+            f_idx += 1;
             let filename = val.file_name();
             let filename_len = filename.len();
             insert_file_entry(&fmd, filename, &mut file_entries);
@@ -238,10 +236,10 @@ pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, skip_set: &H
         }        
         other_entries[curr_idx].files = file_entries.into_boxed_slice();
 
-        dIdx += 1;
+        d_idx += 1;
     }
 
-    return Ok(dir_q.drain(dIdx..).collect());
+    return Ok(dir_q.drain(d_idx..).collect());
 }
 
 fn insert_file_entry(md: &Metadata, bn: OsString, dest: &mut Vec<FileEntry>) -> usize {
@@ -292,7 +290,7 @@ mod tests {
 
     use crate::utility::get_cwd;
 
-    use super::{walk_until_end};
+    use super::walk_until_end;
 
     #[test]
     fn one_root_file_iter() {

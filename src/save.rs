@@ -2,7 +2,7 @@ use std::{cmp::Ordering, collections::HashMap, ffi::OsString, fs::{DirEntry, Fil
 use std::io::{self, Read};
 use crate::{diff::{CDirEntryDiff, DiffType, FileEntryDiff, TDiff}, walk::{CDirEntry, FileEntry}};
 
-const START_VECTOR_BYTES: u64 = 8;
+const _START_VECTOR_BYTES: u64 = 8;
 
 pub fn get_hash_iteration_count_from_file_names(root: &std::path::PathBuf, save_file_dir: std::path::PathBuf) -> (String, i32) {
     let root_hash_str: String;
@@ -93,7 +93,7 @@ pub fn read_diff_file(file_path: PathBuf) -> io::Result<Vec<CDirEntryDiff>> {
     }
 }
 
-pub fn get_next_chunk_from_file(f: &mut File, file_size: u64, start: u64, chunk_size: u64) -> io::Result<(Vec<CDirEntry>, u64)> {
+pub fn _get_next_chunk_from_file(f: &mut File, file_size: u64, start: u64, chunk_size: u64) -> io::Result<(Vec<CDirEntry>, u64)> {
     // 1. Read FROM START `chunk_size`
     let res = f.seek(SeekFrom::Start(start));
     if res.is_err() {
@@ -120,7 +120,7 @@ pub fn get_next_chunk_from_file(f: &mut File, file_size: u64, start: u64, chunk_
                 inner_off += size as usize;
                 ret.push(item);
             }
-            Err(e) => {
+            Err(_e) => {
                 break;
             }
         }
@@ -133,12 +133,12 @@ pub fn get_next_chunk_from_file(f: &mut File, file_size: u64, start: u64, chunk_
     Ok((ret, next_off))
 }
 
-pub fn get_chunk_entry_offsets_from_file(f: &mut File, file_size: u64, chunk_size: u64) -> io::Result<Vec<u64>> {
+pub fn _get_chunk_entry_offsets_from_file(f: &mut File, file_size: u64, chunk_size: u64) -> io::Result<Vec<u64>> {
     let num_chunks = (file_size as f64 / chunk_size as f64).ceil() as usize;
 
     let mut chunk_offsets: Vec<u64> = Vec::with_capacity(num_chunks); 
-    chunk_offsets.push(START_VECTOR_BYTES);
-    let mut num_entries = 0;
+    chunk_offsets.push(_START_VECTOR_BYTES);
+    let mut _num_entries = 0;
     for i in 0..chunk_offsets.capacity() {
         let off = chunk_offsets[i];
         
@@ -164,7 +164,7 @@ pub fn get_chunk_entry_offsets_from_file(f: &mut File, file_size: u64, chunk_siz
                 Ok(item) => {
                     let size = bincode::serialized_size(&item).unwrap();
                     inner_off += size as usize;
-                    num_entries += 1;
+                    _num_entries += 1;
                 }
                 Err(_) => {
                     break;

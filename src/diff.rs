@@ -114,7 +114,7 @@ pub fn add_diffs_to_items<I: Clone + std::fmt::Debug + PartialEq, D: Clone + std
     
     let mut add_diff_idx = 0;
     let mut rem_mod_diff_idx = 0;
-    let mut dur = Duration::new(0, 0);
+    // let mut dur = Duration::new(0, 0);
     while look_idx < items.len() && ((rem_mod_diff_idx < rem_mod_diffs.len()) || add_diff_idx < add_items.len()) {
         if assign_idx < look_idx {
             items[assign_idx] = items[look_idx].clone();
@@ -242,71 +242,6 @@ pub fn merge_file_diff_to_entry(ent: &mut FileEntry, d: FileEntryDiff) {
     ent.sz = d.sz as u64;
 }
 
-pub fn add_diffs_to_files(fes: &mut Vec<FileEntry>, diffs: Box<[FileEntryDiff]>) {
-    let mut modified_or_removed: Vec<FileEntryDiff> = Vec::new();
-    let mut added: Vec<FileEntryDiff> = Vec::new();
-    for d in &diffs {
-        if d.diff_type == DiffType::Modify || d.diff_type == DiffType::Remove {
-            modified_or_removed.push(d.clone());
-        } else {
-            added.push(d.clone());
-        }
-    }
-
-    if fes.len() == 0 {
-        for fd in &diffs {
-            if fd.diff_type == DiffType::Add {
-                fes.push(get_entry_from_file_diff(fd.clone()))
-            }
-        }
-        return;
-    }
-
-    let mut mdi = 0;
-    let mut adi = 0;
-    let mut remCount = 0;
-    let mut addCount = 0;
-    let mut i = 0;
-    let mut lastBaseName = fes[0].bn.clone();
-    while (i + remCount - addCount) < fes.len() {
-        let mut ent = fes[i + remCount - addCount].clone();
-        let mut removed = false;
-        let mut added_ent: Option<FileEntry> = None;
-        if mdi < modified_or_removed.len() {
-            let curr_mod_diff = &modified_or_removed[mdi];
-            if ent.bn == curr_mod_diff.bn {
-                if curr_mod_diff.diff_type == DiffType::Modify {
-                    merge_file_diff_to_entry(&mut ent, curr_mod_diff.clone());
-                } else {
-                    remCount += 1;
-                    removed = true;
-                }
-
-                mdi += 1;
-            }
-        }
-        if adi < added.len() {
-            let curr_add_diff = &added[adi];
-            if curr_add_diff.diff_type == DiffType::Add && curr_add_diff.bn > lastBaseName && curr_add_diff.bn < ent.bn {
-                added_ent = Some(get_entry_from_file_diff(curr_add_diff.clone()));
-                addCount += 1;
-                adi += 1;
-            }
-        }
-        lastBaseName = fes[i].bn.clone();
-
-        fes[i] = fes[i + remCount - addCount].clone();
-        if !added_ent.is_none() {
-            fes[i] = added_ent.unwrap();
-        }
-        if !removed {
-            i += 1;
-        }
-    }
-
-    fes.resize(fes.len() - remCount + addCount, fes[0].clone());
-}
-
 pub fn get_entry_from_dir_diff(d: CDirEntryDiff) -> CDirEntry {
     return CDirEntry {
         p: d.p,
@@ -362,7 +297,9 @@ mod tests {
 
     use crate::{scan::{bubble_up_props, scan}, walk::walk_until_end};
 
-    use super::{add_diffs_to_items, get_cwd, DiffType};
+    use crate::utility::get_cwd;
+
+    use super::{add_diffs_to_items, DiffType};
 
     #[derive(Debug, Clone, PartialEq)]
     pub struct Num {
@@ -386,9 +323,24 @@ mod tests {
             Ok(test_input_path) => {
                 let new_file_path = PathBuf::from(format!("{}/tests/test_dir/b/jmiddle", wd.display()));
                 let test_output_path: PathBuf = std::path::PathBuf::from_str(format!("{}/tests/test_output_dir", wd.display()).as_str()).expect("Failed to get output path");
-                std::fs::remove_file(&new_file_path);
-                std::fs::remove_dir_all(&test_output_path);
-                std::fs::create_dir(&test_output_path);
+                match std::fs::remove_file(&new_file_path) {
+                    Ok(()) => {}
+                    Err(err) =>{
+                        panic!("failed to remove file: {}", err);
+                    }
+                }
+                match std::fs::remove_dir_all(&test_output_path) {
+                    Ok(()) => {}
+                    Err(err) =>{
+                        panic!("failed to remove dir and contents: {}", err);
+                    }
+                }
+                match std::fs::create_dir(&test_output_path) {
+                    Ok(()) => {}
+                    Err(err) =>{
+                        panic!("failed to create dir: {}", err);
+                    }
+                }
 
                 // Scan before adding file
                 let mut pm: HashMap<std::path::PathBuf, usize> = HashMap::new();
@@ -407,7 +359,7 @@ mod tests {
                 }
 
                 // Get diff after scan
-                let res = scan(test_input_path, test_output_path, 1, 0, 256);
+                let _res = scan(test_input_path, test_output_path, 1, 0, 256);
                 
                 // Do diff
 
@@ -461,7 +413,8 @@ mod tests {
             d: 10,
             dt: DiffType::Add
         }].to_vec();
-        add_diffs_to_items(&mut items, &mut diffs, |a, b|{
+
+        match add_diffs_to_items(&mut items, &mut diffs, |a, b|{
             return a.id.cmp(&b.id);
         }, |a, b| {
             return *a.id == b.id;
@@ -476,7 +429,13 @@ mod tests {
             };
         }, |it, d| {
             it.d += d.d;
-        });
+        }) {
+            Ok(()) => {},
+            Err(err) => {
+                panic!("failed to add diffs to items: {}", err)
+            },
+        }
+        
 
         assert_eq!(items, [Num{
             id: String::from("A"),
@@ -498,18 +457,4 @@ mod tests {
             d: 10,
         }].to_vec());
     }
-}
-
-fn get_cwd () -> PathBuf {
-    let cwd = std::env::current_dir();
-    let mut wd: PathBuf = PathBuf::new();
-    match cwd {
-        Ok(wd1) => {
-            wd = wd1;
-        }
-        Err(e) => {
-            panic!("failed to get wd")
-        }
-    }
-    return wd;
 }

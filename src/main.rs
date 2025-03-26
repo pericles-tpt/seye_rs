@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::env;
 use report::report_changes;
 use scan::scan;
-use utility::MEGABYTE;
+use utility::{get_cwd, MEGABYTE};
 
 const DEFAULT_NUM_THREADS: usize = 84;
 const DEFAULT_FD_LIMIT: usize = 2048;
@@ -24,6 +24,9 @@ fn main() {
         eprintln!("no arguments provided, for a list of commands add the --help argument");
         return;
     }
+
+    // TODO: This is just here to silence a compiler warning, remove this and come up with a better solution
+    let _ = get_cwd();
 
     let is_root = unsafe { libc::geteuid() == 0 };
     let cmd = args[1].as_str();
@@ -50,7 +53,7 @@ fn main() {
             let mut memory_limit: usize = 0;
             // let mut is_recursive = false;
             let mut show_perf_info = false;
-            let mut min_diff_bytes: i64 = 0;
+            let mut min_diff_bytes: i64 = (50 * MEGABYTE) as i64;
             let mut thread_add_dir_limit = DEFAULT_FD_LIMIT; //256;
             let mut scan_hidden = true;
             let mut sorted = false;
@@ -358,11 +361,9 @@ Scan Arguments:
     --version                               Prints version
 
     -p                                      Show performance statistics after scan
-    -md                   (default: 0    )  Specify the minimum size difference to include in diffs, can specify one of: n, nK, nM or nG, e.g. 1M
+    -md                   (default:  50MB)  Specify the minimum size difference to include in diffs, can specify one of: n, nK, nM or nG, e.g. 1M
     
     -t   <num>            (default:    {})  Specify the number of threads, MUST BE >= 2
-    -fdl <num>            (default:  {})  Specify the maximum 'files + dirs' to traverse before returning
-                                            results from each thread
-
-", DEFAULT_NUM_THREADS, DEFAULT_FD_LIMIT);
+    -fdl <num>            (default:  {})  Specify the maximum 'files + dirs' to traverse before returning results from each thread", 
+    DEFAULT_NUM_THREADS, DEFAULT_FD_LIMIT);
 }
