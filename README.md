@@ -44,7 +44,7 @@ CONS:
 #### Multithreading
 You can run the scans across multiple threads by settings the `-t` parameter >= 2. All messaging between the main and additional threads is done with channels. When multithreading the responsibilities of the threads are:
 - Main Thread: Redistributes incoming paths from each thread, back to all the ready threads. Sends an EXIT command to all threads when there are no paths left.
-- Other Threads: Receive incoming paths, then walks directories iteratively up to a limit (specified with `-tdl` flag). Each directory's information is stored in a `CDirEntry` and the information for each file is also stored in the `CDirEntry`. All `CDirEntry` are stored in a vector managed by the thread which is returned on termination. Once the thread reaches its traversal limit it returns any remaining (i.e. not traversed) paths back to the main thread to redistribute.
+- Other Threads: Receive incoming paths, then walks directories iteratively up to a limit (specified with `-fdl` flag). Each directory's information is stored in a `CDirEntry` and the information for each file is also stored in the `CDirEntry`. All `CDirEntry` are stored in a vector managed by the thread which is returned on termination. Once the thread reaches its traversal limit it returns any remaining (i.e. not traversed) paths back to the main thread to redistribute.
 
 ### Benchmarks
 TODO: Use the same format as my `pretty_fast_find` project
