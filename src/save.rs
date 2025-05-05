@@ -1,5 +1,5 @@
-use std::{cmp::Ordering, collections::HashMap, ffi::OsString, fs::{DirEntry, File}, hash::{DefaultHasher, Hasher}, io::{BufReader, Seek, SeekFrom}, os::unix::ffi::OsStrExt, path::PathBuf, time::{SystemTime, UNIX_EPOCH}, usize};
-use std::io::{self, Read};
+use std::{cmp::Ordering, collections::HashMap, ffi::OsString, fs::{DirEntry, File}, hash::{DefaultHasher, Hasher}, io::BufReader, os::unix::ffi::OsStrExt, path::PathBuf, time::{SystemTime, UNIX_EPOCH}, usize};
+use std::io;
 use crate::{diff::{CDirEntryDiff, DiffType, FileEntryDiff, TDiff}, walk::{CDirEntry, FileEntry}};
 
 const _START_VECTOR_BYTES: u64 = 8;
@@ -93,163 +93,114 @@ pub fn read_diff_file(file_path: PathBuf) -> io::Result<Vec<CDirEntryDiff>> {
     }
 }
 
-pub fn _get_next_chunk_from_file(f: &mut File, file_size: u64, start: u64, chunk_size: u64) -> io::Result<(Vec<CDirEntry>, u64)> {
-    // 1. Read FROM START `chunk_size`
-    let res = f.seek(SeekFrom::Start(start));
-    if res.is_err() {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("Failed to seek to `start` in file")))
-    }
-    let mut limit = chunk_size;
-    if start + limit > file_size - 1 {
-        limit = file_size - start;
-    }
-    let mut chunk: Vec<u8> = Vec::with_capacity(limit as usize);
-    let n = f.by_ref().take(limit).read_to_end(&mut chunk)?;
-    if n == 0 {
-        return Ok((Vec::new(), start));
-    }
-    let chunk_box = chunk.into_boxed_slice();
-
-    // 2. Deserialise the bytes until error (sometime)
-    let mut ret: Vec<CDirEntry> = Vec::new();
-    let mut inner_off = 0;
-    loop {
-        match bincode::deserialize::<CDirEntry>(&chunk_box[inner_off..]) {
-            Ok(item) => {
-                let size = bincode::serialized_size(&item).unwrap();
-                inner_off += size as usize;
-                ret.push(item);
-            }
-            Err(_e) => {
-                break;
-            }
-        }
-    }
-
-    // 3. IF error, the next start point is `chunk_size` - `back_off`
-    let back_off = chunk_size - inner_off as u64;
-    let next_off = start + chunk_size as u64 - back_off;
-
-    Ok((ret, next_off))
-}
-
-pub fn _get_chunk_entry_offsets_from_file(f: &mut File, file_size: u64, chunk_size: u64) -> io::Result<Vec<u64>> {
-    let num_chunks = (file_size as f64 / chunk_size as f64).ceil() as usize;
-
-    let mut chunk_offsets: Vec<u64> = Vec::with_capacity(num_chunks); 
-    chunk_offsets.push(_START_VECTOR_BYTES);
-    let mut _num_entries = 0;
-    for i in 0..chunk_offsets.capacity() {
-        let off = chunk_offsets[i];
-        
-        // 1. Read FROM START `chunk_size`
-        let res = f.seek(SeekFrom::Start(off));
-        if res.is_err() {
-            break;
-        }
-        let mut limit = chunk_size;
-        if off + limit > file_size - 1 {
-            limit = file_size - off;
-        }
-        let mut chunk: Vec<u8> = Vec::with_capacity(limit as usize);
-        let n = f.by_ref().take(limit).read_to_end(&mut chunk)?;
-        if n == 0 {
-            break;
-        }
-
-        // 2. Deserialise the bytes until error (sometime)
-        let mut inner_off = 0;
-        loop {
-            match bincode::deserialize::<CDirEntry>(&chunk[inner_off..]) {
-                Ok(item) => {
-                    let size = bincode::serialized_size(&item).unwrap();
-                    inner_off += size as usize;
-                    _num_entries += 1;
-                }
-                Err(_) => {
-                    break;
-                }
-            }
-        }
-
-        // 3. IF error, the next start point is `chunk_size` - `back_off`
-        let back_off = chunk_size - inner_off as u64;
-        let next_off = off + chunk_size as u64 - back_off;
-        chunk_offsets.push(next_off);
-        chunk.clear();
-    }
-
-    Ok(chunk_offsets)
-}
-
-pub fn diff_saves(mut o: Vec<CDirEntry>, mut n: Vec<CDirEntry>, newest_initial_scan_time: SystemTime, diff_no: u16, min_diff_bytes: i64) -> std::vec::Vec<CDirEntryDiff> {
-    let min_diff_threshold = min_diff_bytes as i64;
+pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, diff_no: u16, min_diff_bytes: usize) -> std::vec::Vec<CDirEntryDiff> {
     let mut diffs: Vec<CDirEntryDiff> = Vec::new();
-    
-    // Append `old` to `new` and sort in path and INCREASING modified date order
-    n.append(&mut o);
-    n.sort_by(|a, b| {
-        let c = a.p.cmp(&b.p);
-        if c == Ordering::Equal {
-            return a.md.cmp(&b.md);
-        }
-        return c;
-    });
+    if o.len() == 0 && n.len() == 0 {
+        return diffs;
+    }
 
-    // "diff" CDirEntrys, by comparing `curr` w/ `next`, if 
-    let mut merge_with_prev = false;
-    for i in 0..n.len() - 1 {
-        let curr = &n[i];
-        let mut next_p = &PathBuf::from("/");
-        if i < n.len() - 1 {
-            next_p = &n[i + 1].p
+    let mut oi = 0;
+    let mut ni = 0;
+    let mut old = o[0].clone();
+    let mut new = o[0].clone();
+    while oi < o.len() || ni < n.len() {
+        let old_left = oi < o.len();
+        if old_left {
+            old = o[oi].clone();
+        }
+        let new_left = ni < n.len();
+        if new_left {
+            new = n[ni].clone();
         }
 
-        if *curr.p == *next_p {
-            merge_with_prev = true;
-        } else if merge_with_prev {
-            let prev = &n[i - 1];
-            let maybe_modified_dir_diff = get_maybe_modified_dir_diff(prev.clone(), curr.clone(), diff_no, min_diff_bytes);
-            match maybe_modified_dir_diff {
-                Some(d) => {
-                    diffs.push(d)                    
+        let mut diff_type: DiffType = DiffType::Add; // -> new_left        
+        if old_left && new_left {
+            let old_new_cmp = old.p.cmp(&new.p);
+            match old_new_cmp {
+                Ordering::Equal => {
+                    diff_type = DiffType::Modify;
                 },
-                None => {}
+                Ordering::Less => {
+                    // old item removed, NEXT old item *might* match CURRENT new
+                    diff_type = DiffType::Remove;
+                    ni -= 1;
+                },
+                Ordering::Greater => {   
+                    // new item added, CURRENT old item *might* match NEXT new 
+                    diff_type = DiffType::Add;
+                    oi -= 1;
+                }
             }
-            merge_with_prev = false;
-        } else if !curr.md.is_none() {
-            // Add/Remove
-            // IF there's one, it could be OLD or NEW, how do I distinguish?
-            let is_remove = curr.md.unwrap() <= newest_initial_scan_time;
-            let mut diff_type = DiffType::Add;
-            let mut diff_sign = 1;
-            if is_remove {
-                diff_type = DiffType::Remove;
-                diff_sign = -1;
-            }
-
-            if curr.size_here >= min_diff_threshold {
-                diffs.push(CDirEntryDiff {
-                    diff_type: diff_type,
-                    diff_no: diff_no,
-                    
-                    p: curr.p.clone(),
-                    t_diff: get_t_diff_from_md(curr.md, is_remove),
-                
-                    files_here: curr.files_here,
-                    files_below: curr.files_below,
-                    dirs_here: curr.dirs_here,
-                    dirs_below: curr.dirs_below,
-                    size_here: curr.size_here as i64 * diff_sign,
-                    size_below: curr.size_below as i64 * diff_sign,
-                    memory_usage_here: curr.memory_usage_here,
-                    memory_usage_below: curr.memory_usage_below,
-                    
-                
-                    files: get_file_diffs(Vec::new(), curr.files.to_vec(), diff_no),
-                });
-            } 
+        } else if old_left {
+            diff_type = DiffType::Remove;
         }
+
+        let diff_passes_threshold;
+        match diff_type {
+            DiffType::Add => {
+                // diff_passes_threshold = new.size_here + new.size_below >= min_diff_bytes as i64;
+                diff_passes_threshold = new.size_here >= min_diff_bytes as i64;
+                if diff_passes_threshold {
+                    diffs.push(CDirEntryDiff{
+                        diff_type: DiffType::Add,
+                        diff_no: diff_no,
+                        
+                        p: new.p.clone(),
+                        t_diff: get_t_diff_from_md(new.md, false),
+                    
+                        files_here: new.files_here,
+                        files_below: new.files_below,
+                        dirs_here: new.dirs_here,
+                        dirs_below: new.dirs_below,
+                        size_here: new.size_here as i64,
+                        size_below: new.size_below as i64,
+                        memory_usage_here: new.memory_usage_here,
+                        memory_usage_below: new.memory_usage_below,
+                    
+                        files: get_file_diffs(Vec::new(), new.files.to_vec(), diff_no),
+                    })
+                }
+            },
+            DiffType::Remove => {
+                // diff_passes_threshold = old.size_here + old.size_below >= min_diff_bytes as i64;
+                diff_passes_threshold = old.size_here >= min_diff_bytes as i64;
+                if diff_passes_threshold {
+                    diffs.push(CDirEntryDiff{
+                        diff_type: DiffType::Remove,
+                        diff_no: diff_no,
+                        
+                        p: old.p.clone(),
+                        t_diff: get_t_diff_from_md(old.md, true),
+                    
+                        files_here: old.files_here,
+                        files_below: old.files_below,
+                        dirs_here: old.dirs_here,
+                        dirs_below: old.dirs_below,
+                        size_here: old.size_here as i64 * -1,
+                        size_below: old.size_below as i64 * -1,
+                        memory_usage_here: old.memory_usage_here,
+                        memory_usage_below: old.memory_usage_below,
+                    
+                        files: get_file_diffs(old.files.to_vec(), Vec::new(), diff_no),
+                    })
+                }
+            },
+            DiffType::Modify => {
+                let maybe_modified_dir_diff = get_maybe_modified_dir_diff(old.clone(), new.clone(), diff_no);
+                match maybe_modified_dir_diff {
+                    Some(d) => {
+                        diff_passes_threshold = d.size_here.abs() >= min_diff_bytes as i64;
+                        if diff_passes_threshold {
+                            diffs.push(d);
+                        }
+                    },
+                    None => {}
+                }
+            }
+        }
+
+        oi += 1;
+        ni += 1;
     }
 
     return diffs;
