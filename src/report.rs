@@ -28,6 +28,28 @@ pub fn report_changes(target_path: PathBuf, output_path: PathBuf) -> std::io::Re
         }
     }
 
+    // Sort by ABSOLUTE size, if any INCREASES exactly match DECREASES, then it's probably moved
+    combined_diffs.sort_by(|a, b| {
+        if (a.size_here + a.size_below).abs() <= (b.size_here + b.size_below).abs() {
+            return Ordering::Greater
+        }
+        return Ordering::Less
+    });
+    let mut combined_diff_sl = Vec::new();
+    let mut i = 0;
+    while i < combined_diffs.len() {
+        // If two diffs have the same: name, hash and size remove them
+        if i + 1 < combined_diffs.len() {
+            if (combined_diffs[i].size_below + combined_diffs[i].size_here + combined_diffs[i + 1].size_here + combined_diffs[i + 1].size_below) == 0 && (combined_diffs[i].p.file_name() == combined_diffs[i+1].p.file_name()) {
+                i += 2;
+                continue;
+            }
+        }
+        combined_diff_sl.push(combined_diffs[i].clone());
+        i += 1;
+    }
+    combined_diffs = combined_diff_sl;
+
     combined_diffs.sort_by(|a, b| {
         if (a.size_here + a.size_below) <= (b.size_here + b.size_below) {
             return Ordering::Greater
@@ -38,6 +60,9 @@ pub fn report_changes(target_path: PathBuf, output_path: PathBuf) -> std::io::Re
     let limit = combined_diffs.len();
     let mut total: i64 = 0;
     for i in 0..limit {
+        if (combined_diffs[i].size_here + combined_diffs[i].size_below) == 0 {
+            continue;
+        }
         let mut t = format!("{:?}",combined_diffs[i].diff_type).to_ascii_uppercase();
         let _ = t.split_off(3);
         println!("{}: {:?} ({})", t, combined_diffs[i].p, get_shorthand_memory_limit(combined_diffs[i].size_here + combined_diffs[i].size_below));
