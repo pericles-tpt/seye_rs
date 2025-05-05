@@ -90,125 +90,79 @@ pub fn add_diffs_to_items<I: Clone + std::fmt::Debug + PartialEq, D: Clone + std
     
     // Split diffs into: ADD and MODIFY/REMOVE
     let mut add_items: Vec<I> = Vec::new();
-    let mut add_items_idxs: Vec<usize> = Vec::new();
-    let mut rem_mod_diffs: Vec<D> = Vec::new();
-    let mut num_remove_items = 0;
+    let mut rem_diffs: Vec<D> = Vec::new();
+    let mut mod_diffs: Vec<D> = Vec::new();
     for i in 0..diffs.len() {
         if diff_adds_items(&diffs[i]) {     
             let item_to_add = get_item_from_diff(diffs[i].clone());    
-            add_items_idxs.push(i);
             add_items.push(item_to_add);
-        } else  {
-            if diff_removes_item(&diffs[i]) {
-                num_remove_items += 1;
-            }
-            rem_mod_diffs.push(diffs[i].clone());
+        } else if diff_removes_item(&diffs[i]) {
+            rem_diffs.push(diffs[i].clone());
+        } else {
+            mod_diffs.push(diffs[i].clone());
         }
     }
+
     // Resize the array to fit the ADD diffs
-    items.resize(items.len() + add_items_idxs.len() - num_remove_items, items[0].clone());
+    items.resize(items.len() + add_items.len() - rem_diffs.len(), items[items.len() - 1].clone()); 
     
-    let mut assign_idx = 0;
+    // Modify / Remove
     let mut look_idx = 0;
-    
-    let mut add_diff_idx = 0;
-    let mut rem_mod_diff_idx = 0;
-    // let mut dur = Duration::new(0, 0);
-    while look_idx < items.len() && ((rem_mod_diff_idx < rem_mod_diffs.len()) || add_diff_idx < add_items.len()) {
+    let mut assign_idx = 0;
+    let mut mod_diff_idx = 0;
+    let mut rem_diff_idx = 0;
+    while look_idx < items.len() {
         if assign_idx < look_idx {
             items[assign_idx] = items[look_idx].clone();
         }
-
-        // Iterators
-        let curr = &items[look_idx].clone();
-        let mut next = None;
-        if look_idx < items.len() - 1 {
-            next = Some(items[look_idx + 1].clone());
+        let mut curr = items[look_idx].clone();
+        let modify = mod_diff_idx < mod_diffs.len() && item_diff_match(&curr, &mod_diffs[mod_diff_idx]);
+        let remove = rem_diff_idx < rem_diffs.len() && item_diff_match(&curr, &rem_diffs[rem_diff_idx]);
+        if remove {
+            look_idx += 1;
+            rem_diff_idx += 1;
+            continue;
         }
-
-        let mut removed = false;
-        while rem_mod_diff_idx < rem_mod_diffs.len() {
-            let rem_mod_diff = &rem_mod_diffs[rem_mod_diff_idx];
-            if !item_diff_match(&curr, &rem_mod_diff) {
-                break;
-            }
-            
-            if diff_removes_item(rem_mod_diff) {
-                assign_idx -= 1;
-                removed = true;
-            } else {
-                let mut_curr = &mut items[look_idx];
-                add_diff_to_item(mut_curr, rem_mod_diff.clone());
-                
-                if assign_idx < look_idx {
-                    items[assign_idx] = items[look_idx].clone();
-                }
-            }
-            
-            rem_mod_diff_idx += 1;
+        if modify {
+            add_diff_to_item(&mut curr, mod_diffs[mod_diff_idx].clone());
+            items[look_idx] = curr;
+            mod_diff_idx += 1;
         }
-        
-        while !removed && add_diff_idx < add_items.len() {
-            let pos: Ordering = items_sort(&add_items[add_diff_idx], curr); // diff_before_item(&add_items[add_diff_idx], prev.clone(), &curr, next.clone());
-            let adjacent = pos != Ordering::Equal;
-            if !adjacent {
-                break
-            }
-            
-            // Items are UNIQUE, so will only be added if adjacent
-            // LESS: Add the item at the current `assign_idx`, if there's another item there, put it in the right spot in the add_items array
-            // GREATER: ONLY add it at the end?
-            
-            let at_items_end = &next.is_none();
-            let mut increment = true;
-            
-            // Recreate `add_items`, inserting `curr_clone` in-place
-            if pos == Ordering::Less {
-                let item_to_add = add_items[add_diff_idx].clone();    
-                if assign_idx < look_idx {
-                    items[assign_idx] = item_to_add;
-                    look_idx = assign_idx;
-                } else if assign_idx == look_idx {
-                    // TODO: Re-write this to modify `add_items` in-place rather than creating a new array and replacing the old one
-                    // Re-populate new_add_items, with `curr_clone`, in correct position   
-                    let curr_clone = items[look_idx].clone();                 
-                    let mut new_add_items = Vec::with_capacity(add_items.len() + 1);
-                    let mut curr_inserted = false;
-                    for i in add_diff_idx..add_items.len() {
-                        // let it = add_items[i].clone();
-                        if add_items[i] == item_to_add {
-                            continue
-                        }
-                        if !curr_inserted && items_sort(&curr, &add_items[i]) == Ordering::Less {
-                            new_add_items.push(items[look_idx].clone());
-                            curr_inserted = true;
-                        }
-                        new_add_items.push(add_items[i].clone());
-                    }
-                    if !curr_inserted {
-                        new_add_items.push(curr_clone);
-                    }
-                    add_items = new_add_items;
-                    add_diff_idx = 0;
-                    
-                    items[assign_idx] = item_to_add;
-                    increment = false;
-                }
-            } else if *at_items_end {
-                // ONLY add GREATER at the end
-                items[look_idx] = add_items[add_diff_idx].clone();
-            } else {
-                increment = false;
-            }
-            
-            if !increment {
-                break
-            }
-            add_diff_idx += 1;
-        }
-        
         assign_idx += 1;
         look_idx += 1;
+    }
+
+    // Add
+    if add_items.len() == 0 {
+        return Ok(());
+    }
+    look_idx = 0;
+    while look_idx < items.len() {
+        let curr = items[look_idx].clone();
+        let add    = items_sort(&curr, &add_items[0]) == Ordering::Greater;
+        if !add {
+            look_idx += 1;
+            continue;
+        }
+
+        // Swap them
+        let tmp = add_items[0].clone();
+        items[look_idx] = tmp;
+        
+        // TODO: Look at VecDequeue
+        // Shift everything down until a spot is found for `curr`
+        let mut i = 1;
+        while i < add_items.len() && items_sort(&curr, &add_items[i]) != Ordering::Less {
+            add_items[i - 1] = add_items[i].clone();
+            i += 1;
+        }
+        add_items[i - 1] = curr;
+    
+        look_idx += 1;
+    }
+    let num_items = items.len() - 1;
+    if items_sort(&add_items[add_items.len() - 1], &items[num_items]) == Ordering::Greater {
+        items[num_items] = add_items[add_items.len() - 1].clone();
     }
 
     return Ok(());
