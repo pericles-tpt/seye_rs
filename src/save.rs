@@ -255,9 +255,9 @@ pub fn diff_saves(mut o: Vec<CDirEntry>, mut n: Vec<CDirEntry>, newest_initial_s
     return diffs;
 }
 
-fn get_maybe_modified_dir_diff(ent_o: CDirEntry, ent_n: CDirEntry, diff_no: u16, min_diff_threshold: i64) -> Option<CDirEntryDiff> {    
+fn get_maybe_modified_dir_diff(ent_o: CDirEntry, ent_n: CDirEntry, diff_no: u16) -> Option<CDirEntryDiff> {    
     let diff_here = ent_o.dirs_here != ent_n.dirs_here || ent_o.files_here != ent_n.files_here || ent_o.size_here != ent_n.size_here;
-    if !diff_here || (ent_n.size_here - ent_o.size_here).abs() < min_diff_threshold {
+    if !diff_here {
         return None;
     }
 
@@ -426,12 +426,17 @@ pub fn add_dir_diffs(to: &mut Vec<CDirEntryDiff>, from: &Vec<CDirEntryDiff>) {
     to.resize(new_len, to[0].clone());
 }
 
-fn merge_dir_diff(old: CDirEntryDiff, new: CDirEntryDiff) -> CDirEntryDiff {
-    if new.diff_type != DiffType::Modify {
-        return new;
+fn merge_dir_diff(old: CDirEntryDiff, new: CDirEntryDiff) -> Option<CDirEntryDiff> {
+    if (old.diff_type == DiffType::Remove && new.diff_type == DiffType::Add) || 
+       (old.diff_type == DiffType::Add && new.diff_type == DiffType::Remove) {
+        if diffs_match_except_time(&old, &new) {
+            return None
+        }
+    } else if new.diff_type != DiffType::Modify {
+        return Some(new);
     }
 
-    return CDirEntryDiff{
+    return Some(CDirEntryDiff{
         p: new.p,
         t_diff: TDiff{
             s_diff: old.t_diff.s_diff + new.t_diff.s_diff,
@@ -451,7 +456,14 @@ fn merge_dir_diff(old: CDirEntryDiff, new: CDirEntryDiff) -> CDirEntryDiff {
         diff_type: new.diff_type,
     
         files: merge_file_diffs(old.files, new.files),
-    }
+    });
+}
+
+fn diffs_match_except_time(old: &CDirEntryDiff, new: &CDirEntryDiff) -> bool {
+    return old.p == new.p 
+    && (old.files_here + old.files_below) == (new.files_here + new.files_below)
+    && (old.dirs_here + old.dirs_below) == (new.dirs_here + new.dirs_below)
+    && (old.size_here + old.size_below) - (new.size_here + new.size_below) == 0
 }
 
 fn merge_file_diffs(old: Box<[FileEntryDiff]>, new: Box<[FileEntryDiff]>) -> Box<[FileEntryDiff]> {
@@ -474,7 +486,7 @@ fn merge_file_diffs(old: Box<[FileEntryDiff]>, new: Box<[FileEntryDiff]>) -> Box
     return ret[0..new_len].to_vec().into_boxed_slice();
 }
 
-fn merge_sorted_vec_duplicates<T: Clone>(arr: &mut Vec::<T>, is_dup: fn(a: &T, b: &T) -> bool, merge_elems: fn(old: T, new: T) -> T) -> usize {
+fn merge_sorted_vec_duplicates<T: Clone>(arr: &mut Vec::<T>, is_dup: fn(a: &T, b: &T) -> bool, merge_elems: fn(old: T, new: T) -> Option<T>) -> usize {
     if arr.len() == 0 {
         return 0;
     }
@@ -488,7 +500,10 @@ fn merge_sorted_vec_duplicates<T: Clone>(arr: &mut Vec::<T>, is_dup: fn(a: &T, b
         if is_dup(&assign_at, &look_at) {
             // Merge two elements INTO the assign idx
             assign_idx -= 1;
-            arr[assign_idx] = merge_elems(assign_at, look_at);
+            let maybe_elem = merge_elems(assign_at, look_at);
+            if maybe_elem.is_some() {
+                arr[assign_idx] = maybe_elem.unwrap();
+            }
         } else {
             // `skipped_elems` -> element at `assign_idx` was merged into a previous element and should be overriden
             let skipped_elems = look_idx > assign_idx;
@@ -506,12 +521,17 @@ fn merge_sorted_vec_duplicates<T: Clone>(arr: &mut Vec::<T>, is_dup: fn(a: &T, b
     return assign_idx;
 }
 
-fn merge_file_diff(old: FileEntryDiff, new: FileEntryDiff) -> FileEntryDiff {
-    if new.diff_type != DiffType::Modify {
-        return new;
+fn merge_file_diff(old: FileEntryDiff, new: FileEntryDiff) -> Option<FileEntryDiff> {
+    if (old.diff_type == DiffType::Remove && new.diff_type == DiffType::Add) ||
+       (old.diff_type == DiffType::Add && new.diff_type == DiffType::Remove) {
+        if file_diffs_match_except_time(&old, &new) {
+            return None
+        }
+    } else if new.diff_type != DiffType::Modify {
+        return Some(new);
     }
 
-    return FileEntryDiff{
+    return Some(FileEntryDiff{
         bn: new.bn,
         sz: old.sz + new.sz,
         t_diff: TDiff{
@@ -522,7 +542,14 @@ fn merge_file_diff(old: FileEntryDiff, new: FileEntryDiff) -> FileEntryDiff {
         diff_type: new.diff_type,
         hash: [0; 32],
         is_symlink: new.is_symlink,
-    }
+    });
+}
+
+fn file_diffs_match_except_time(old: &FileEntryDiff, new: &FileEntryDiff) -> bool {
+    return old.bn == new.bn
+    && old.is_symlink == new.is_symlink
+    && old.hash == new.hash
+    && old.sz == new.sz
 }
 
 fn get_maybe_modified_file_diff(ent_o: FileEntry, ent_n: FileEntry, diff_no: u16) -> Option<FileEntryDiff> {    

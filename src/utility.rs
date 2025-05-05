@@ -3,8 +3,8 @@ use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use crate::walk::{walk_collect_until_limit, CDirEntry};
 
 pub const KILOBYTE: usize = 1024;
-pub const MEGABYTE: usize = KILOBYTE * 1024;
-pub const GIGABYTE: usize = MEGABYTE * 1024;
+pub const MEGABYTE: usize = 1024 * KILOBYTE;
+pub const GIGABYTE: usize = 1024 * MEGABYTE;
 
 pub fn get_shorthand_memory_limit(amount: i64) -> String {
     if amount == 0 {
@@ -28,6 +28,33 @@ pub fn get_shorthand_memory_limit(amount: i64) -> String {
         }
     }
     return format!("{}{}{}", sign, amount_abs / mult, unit)
+}
+
+pub fn get_bytes_from_arg(a: &String) -> std::io::Result<usize> {
+    // Expecting string of the form: 500M, 2G, etc
+    let memory_shorthand = a.as_str();
+    if memory_shorthand.len() < 2 {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "must be at least 2 characters, e.g. 2G"));
+    }
+
+    // Get quantity
+    let maybe_num_str = &memory_shorthand[0..memory_shorthand.len()-1];
+    let maybe_num = maybe_num_str.parse::<usize>();
+    if maybe_num.is_err() || maybe_num.clone().unwrap() < 1 {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "the number preceding the last character must be a non-negative integer"));
+    }
+
+    // Get unit
+    let unit = memory_shorthand.chars().last().unwrap();
+    if unit != 'M' && unit != 'G' {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "must end with a valid unit either 'M' (megabytes) or 'G' (gigabytes)"));
+    }
+
+    let mut ret = maybe_num.unwrap() * 1024 * 1024;
+    if unit == 'G' {
+        ret *= 1024;
+    } 
+    Ok(ret)
 }
 
 pub fn get_cwd () -> PathBuf {

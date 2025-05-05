@@ -7,7 +7,7 @@ pub enum DiffType {
     Add,
     Remove,
     Modify,
-    // Rename, // TODO: rename, a bit harder to do, do I need file hashes?
+    // Rename, // TODO: Should this be move instead?
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -74,7 +74,6 @@ where
     Ok(vec.into_boxed_slice())
 }
 
-// NOTE: Assumes diffs are sorted
 pub fn add_diffs_to_items<I: Clone + std::fmt::Debug + PartialEq, D: Clone + std::fmt::Debug>(
     items: &mut Vec<I>, 
     diffs: &mut Vec<D>, 

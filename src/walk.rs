@@ -54,28 +54,6 @@ where
     Ok(vec.into_boxed_slice())
 }
 
-// TODO: Look into this, splitting CDireEntry by its 64B numeric properties and variable properties
-//       could improve caching performance for accessing sizing data
-// #[derive(Serialize, Deserialize, Debug, Clone)]
-// pub struct CDirEntrySz {
-//     pub files_here: usize,
-//     pub files_below: usize,
-//     pub dirs_here: usize,
-//     pub dirs_below: usize,
-//     pub size_here: i64,
-//     pub size_below: i64,
-//     pub memory_usage_here: usize,
-//     pub memory_usage_below: usize,
-// }
-// #[derive(Serialize, Deserialize, Debug, Clone)]
-// pub struct CDirEntryOther {
-//     pub p: PathBuf,
-//     pub md: Option<SystemTime>,
-
-//     #[serde(deserialize_with = "deserialize_boxed_slice")]
-//     pub files: Box<[FileEntry]>,
-// }
-
 pub fn walk_until_end(root: std::path::PathBuf, parent_map: &mut HashMap<std::path::PathBuf, usize>, skip_set: &mut HashSet<PathBuf>) -> std::vec::Vec<CDirEntry> {
     let mut df: std::vec::Vec<CDirEntry> = Vec::new();
     let mut v: Vec<std::path::PathBuf> = Vec::new();
@@ -288,13 +266,13 @@ fn insert_dir_entry(md: &Metadata, p: &PathBuf, all_dirs: &mut Vec<CDirEntry>, p
 mod tests {
     use std::{collections::{HashMap, HashSet}, str::FromStr};
 
-    use crate::utility::get_cwd;
+    use crate::utility;
 
     use super::walk_until_end;
 
     #[test]
     fn one_root_file_iter() {
-        let wd = get_cwd();
+        let wd = utility::get_cwd();
         let path = std::path::PathBuf::from_str(format!("{}/tests/test_dir/b", wd.display()).as_str());
         match path {
             Ok(p) => {
@@ -318,7 +296,7 @@ mod tests {
 
     #[test]
     fn one_root_folder_iter() {
-        let wd = get_cwd();
+        let wd = utility::get_cwd();
         
         let path = std::path::PathBuf::from_str(format!("{}/tests/test_dir/c", wd.display()).as_str());
         match path {
@@ -352,7 +330,7 @@ mod tests {
 
     #[test]
     fn dirs_files_below_iter() {
-        let wd = get_cwd();
+        let wd = utility::get_cwd();
         
         let path = std::path::PathBuf::from_str(format!("{}/tests/test_dir/a/e", wd.display()).as_str());
         match path {
@@ -377,7 +355,7 @@ mod tests {
 
     #[test]
     fn all_dirs_files_below_iter() {
-        let wd = get_cwd();
+        let wd = utility::get_cwd();
 
         let path = std::path::PathBuf::from_str(format!("{}/tests/test_dir", wd.display()).as_str());
         match path {

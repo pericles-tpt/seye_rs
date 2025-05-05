@@ -2,7 +2,7 @@ use std::{collections::{HashMap, HashSet}, ffi::OsStr, fs::File, io::{BufWriter,
 use crate::{diff::{add_diffs_to_items, get_entry_from_dir_diff, merge_dir_diff_to_entry, CDirEntryDiff, DiffType}, utility::collect_from_root};
 use crate::{save::{add_dir_diffs, diff_saves, get_hash_iteration_count_from_file_names, read_diff_file, read_save_file}, walk::{walk_until_end, CDirEntry}};
 
-pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, min_diff_bytes: i64, num_threads: usize, thread_add_dir_limit: usize) -> Result<(usize, usize), Error> {
+pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, min_diff_bytes: usize, num_threads: usize, thread_add_dir_limit: usize) -> Result<(usize, usize), Error> {
     let save_file_data = get_hash_iteration_count_from_file_names(&target_path, output_path.to_path_buf());
     let path_hash = save_file_data.0;
     let mut path_to_initial = output_path.clone();
@@ -110,7 +110,7 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
     let num_scan_files = curr_scan[0].files_here + curr_scan[0].files_below;
     let num_scan_dirs = curr_scan[0].dirs_here + curr_scan[0].dirs_below + 1;
 
-    let diffs: Vec<CDirEntryDiff> = diff_saves(initial_scan, curr_scan, newest_initial_entry_time.unwrap(), iteration_count as u16 + 1, min_diff_bytes);
+    let diffs: Vec<CDirEntryDiff> = diff_saves(initial_scan, curr_scan, iteration_count as u16 + 1, min_diff_bytes);
     if diffs.len() > 0 {
         let mut path_to_subsequent = output_path.clone();
         path_to_subsequent.push(format!("{}_diff_{}", path_hash, iteration_count + 1));
