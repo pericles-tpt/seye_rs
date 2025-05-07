@@ -17,7 +17,6 @@ pub struct FileEntryDiff {
     pub t_diff: TDiff,
     pub diff_type: DiffType,
     pub diff_no: u16,
-    pub hash: [u8; 32],
     pub is_symlink: bool,
 }
 impl Default for FileEntryDiff {
@@ -31,7 +30,6 @@ impl Default for FileEntryDiff {
             },
             diff_type: DiffType::Modify,
             diff_no: 0,
-            hash: [0; 32],
             is_symlink: false
         }
     }
@@ -216,7 +214,6 @@ pub fn get_entry_from_file_diff(d: FileEntryDiff) -> FileEntry {
         bn: d.bn,
         sz: d.sz as u64,
         md: t_diff_to_system_time(d.t_diff, None),
-        hash: [0; 32],
         is_symlink: d.is_symlink,
     }
 }

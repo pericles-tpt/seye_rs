@@ -296,7 +296,6 @@ fn get_file_diffs(o: Vec<FileEntry>, n: Vec<FileEntry>, diff_no: u16) -> Box<[Fi
                 t_diff: get_t_diff_from_md(ent_n.md, false),
                 sz: ent_n.sz as i128,
                 diff_no: diff_no,
-                hash: [0; 32],
                 is_symlink: ent_n.is_symlink,
             });
             nidx += 1;
@@ -314,7 +313,6 @@ fn get_file_diffs(o: Vec<FileEntry>, n: Vec<FileEntry>, diff_no: u16) -> Box<[Fi
                 t_diff: get_t_diff_from_md(ent_n.md, false),
                 sz: ent_n.sz as i128,
                 diff_no: diff_no,      
-                hash: [0; 32],    
                 is_symlink: ent_n.is_symlink,         
             });
 
@@ -349,7 +347,6 @@ fn get_file_diffs(o: Vec<FileEntry>, n: Vec<FileEntry>, diff_no: u16) -> Box<[Fi
             t_diff: get_t_diff_from_md(ent.md, true),
             sz: ent.sz as i128 * -1,
             diff_no: diff_no,
-            hash: [0; 32],
             is_symlink: ent.is_symlink,
         })
     }
@@ -491,7 +488,6 @@ fn merge_file_diff(old: FileEntryDiff, new: FileEntryDiff) -> Option<FileEntryDi
         },
         diff_no: new.diff_no,
         diff_type: new.diff_type,
-        hash: [0; 32],
         is_symlink: new.is_symlink,
     });
 }
@@ -499,7 +495,6 @@ fn merge_file_diff(old: FileEntryDiff, new: FileEntryDiff) -> Option<FileEntryDi
 fn file_diffs_match_except_time(old: &FileEntryDiff, new: &FileEntryDiff) -> bool {
     return old.bn == new.bn
     && old.is_symlink == new.is_symlink
-    && old.hash == new.hash
     && old.sz == new.sz
 }
 
@@ -521,7 +516,6 @@ fn get_maybe_modified_file_diff(ent_o: FileEntry, ent_n: FileEntry, diff_no: u16
             ns_diff: t_diff_n.ns_diff - t_diff_o.ns_diff,
         },
         diff_no: diff_no,
-        hash: [0; 32],
         is_symlink: ent_n.is_symlink,
     });
 }

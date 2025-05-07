@@ -7,7 +7,6 @@ use serde::{Deserialize, Deserializer, Serialize};
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct FileEntry {
     pub sz: u64,
-    pub hash: [u8; 32],
     pub is_symlink: bool,
 
     pub bn: OsString,
@@ -17,7 +16,6 @@ impl Default for FileEntry {
     fn default() -> Self {
         FileEntry {
             sz: 0,
-            hash: [0; 32],
             is_symlink: false,
 
             bn: OsString::new(),
@@ -229,7 +227,6 @@ fn insert_file_entry(md: &Metadata, bn: OsString, dest: &mut Vec<FileEntry>) -> 
         bn: bn,
         sz: md.len(),
         md: t,
-        hash: [0; 32],
         is_symlink: md.is_symlink()
     };
     dest.push(e);
