@@ -2,7 +2,7 @@ use std::{cmp::Ordering, io::Error, path::PathBuf};
 
 use crate::{diff::CDirEntryDiff, save::get_hash_iteration_count_from_file_names, scan::add_combined_diffs, utility::get_shorthand_memory_limit};
 
-pub fn report_changes(target_path: PathBuf, output_path: PathBuf) -> std::io::Result<()> {
+pub fn report_changes(target_path: PathBuf, output_path: PathBuf, merge_nesting_diff: i32) -> std::io::Result<()> {
     let save_file_data = get_hash_iteration_count_from_file_names(&target_path, output_path.to_path_buf());
     let path_hash = save_file_data.0;
     let mut path_to_initial = output_path.clone();

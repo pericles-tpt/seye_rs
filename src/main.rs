@@ -19,9 +19,10 @@ struct Config {
     num_threads: usize,
     file_dir_limit: usize,
     min_diff_bytes: usize,
-    scan_hidden: bool,
+    // scan_hidden: bool,
     show_perf_info: bool,
-    sorted: bool,
+    // sorted: bool,
+    move_depth_threshold: i32,
 }
 
 fn main() {
@@ -29,9 +30,10 @@ fn main() {
         num_threads:          DEFAULT_NUM_THREADS,
         file_dir_limit:       DEFAULT_FD_LIMIT,
         min_diff_bytes:       DEFAULT_MIN_DIFF_BYTES,
-        scan_hidden:          true,
+        // scan_hidden:          true,
         show_perf_info:       false,
-        sorted:               false,
+        // sorted:               false,
+        move_depth_threshold: 0,
     };
 
     let args: Vec<String> = env::args().collect();
@@ -132,6 +134,13 @@ fn main() {
             }
             let optional_args: Vec<_> = params.iter().collect();
             let num_args = optional_args.len();
+
+            // Get optional params
+            let arg_eval_res = eval_optional_args("report", optional_args, &mut cfg);
+            if arg_eval_res.is_err() {
+                eprintln!("invalid argument provided: {}", arg_eval_res.err().unwrap());
+                return;
+            }
             
             // Get input scan path
             let maybe_target_str = params[num_args - 2];
@@ -169,7 +178,7 @@ fn main() {
                 output_pb = su_path;
             }
             
-            let res = report::report_changes(target_pb, output_pb);
+            let res = report::report_changes(target_pb, output_pb, cfg.move_depth_threshold);
             match res {
                 Ok(()) => {}
                 Err(e) => {
@@ -198,7 +207,7 @@ fn validate_get_pathbuf(p: &String) -> std::io::Result<PathBuf> {
 
 fn eval_optional_args(cmd: &str, args: Vec<&&String>, cfg: &mut Config) -> std::io::Result<()> {    
     let mut i = 0;
-    let valid_command_options = vec!["-p", "-md", "-t", "-fdl"];
+    let valid_command_options = vec!["-p", "-md", "-t", "-fdl", "-mvd"];
     while i < args.len() {
         let before_directory_args = i < args.len() - 2;
         let a = args[i].as_str();
@@ -261,41 +270,20 @@ fn eval_optional_args(cmd: &str, args: Vec<&&String>, cfg: &mut Config) -> std::
                     }
                 }
             }
-            "find" => 'find: {
+            "report" => {
                 // NO VALUE OPTIONS
-                let mut is_no_val_opt = true;
-                match a {
-                    "-h" => {
-                        cfg.scan_hidden = true;
-                    }
-                    "-s" => {
-                        cfg.sorted = true;
-                    }
-                    _ => {is_no_val_opt = false;}
-                }
-                if is_no_val_opt {
-                    break 'find;
-                }
-
                 // ONE VALUE OPTIONS
                 i += 1;
                 if i >= args.len() {
                     return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("missing additional argument for '{}' flag", a)));
                 }
                 match a {
-                    "-t" => {
-                        let maybe_threads: Result<usize, ParseIntError> = args[i].parse();
-                        if maybe_threads.is_err() || maybe_threads.clone().unwrap() < 1 {
-                            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid thread argument, must be a non-negative integer"));
+                    "-mvd" => {
+                        let maybe_move_depth_threshold: Result<i32, ParseIntError> = args[i].parse();
+                        if maybe_move_depth_threshold.is_err() {
+                            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid move depth threshold argument, must be a non-negative integer"));
                         }
-                        cfg.num_threads = maybe_threads.unwrap();
-                    }
-                    "-fdl" => {
-                        let maybe_thread_add_dir_limit: Result<usize, ParseIntError> = args[i].parse();
-                        if maybe_thread_add_dir_limit.is_err() || maybe_thread_add_dir_limit.clone().unwrap() < 1 {
-                            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid thread add dir limit argument, must be a non-negative integer"));
-                        }
-                        cfg.file_dir_limit = maybe_thread_add_dir_limit.unwrap();
+                        cfg.move_depth_threshold = maybe_move_depth_threshold.unwrap();
                     }
                     _ => {
                         if before_directory_args {
@@ -328,6 +316,10 @@ Scan Arguments:
     -md                   (default:  50MB)  Specify the minimum size difference to include in diffs, can specify one of: n, nK, nM or nG, e.g. 1M
     
     -t   <num>            (default:    {})  Specify the number of threads, MUST BE >= 2
-    -fdl <num>            (default:  {})  Specify the maximum 'files + dirs' to traverse before returning results from each thread", 
+    -fdl <num>            (default:  {})  Specify the maximum 'files + dirs' to traverse before returning results from each thread
+Report Arguments:
+    -mvd <num>                              Specifies maximum file tree difference for two matching files in different locations to be considered a MOVE,
+                                            otherwise their entries are treated as separate REMOVEs and ADDs
+", 
     DEFAULT_NUM_THREADS, DEFAULT_FD_LIMIT);
 }
