@@ -196,7 +196,8 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, diff_no: u16, min_diff_b
                     },
                     None => {}
                 }
-            }
+            },
+            DiffType::Move => { /* Should never be triggered here */ }
         }
 
         oi += 1;
