@@ -15,6 +15,8 @@ const DEFAULT_NUM_THREADS: usize    = 84;
 const DEFAULT_FD_LIMIT: usize       = 2048;
 const DEFAULT_MIN_DIFF_BYTES: usize = 50 * utility::MEGABYTE;
 
+// TODO: Add `-mvs` (move_show) flag, that shows Move'd items (that normally wouldn't be shown since a `Move` is a 0B diff)
+//       set the default to `false`
 struct Config {
     num_threads: usize,
     file_dir_limit: usize,
@@ -318,7 +320,7 @@ Scan Arguments:
     -t   <num>            (default:    {})  Specify the number of threads, MUST BE >= 2
     -fdl <num>            (default:  {})  Specify the maximum 'files + dirs' to traverse before returning results from each thread
 Report Arguments:
-    -mvd <num>                              Specifies maximum file tree difference for two matching files in different locations to be considered a MOVE,
+    -mvd <num>            (default:     0)  Specifies maximum file tree difference for two matching files in different locations to be considered a MOVE,
                                             otherwise their entries are treated as separate REMOVEs and ADDs
 ", 
     DEFAULT_NUM_THREADS, DEFAULT_FD_LIMIT);
