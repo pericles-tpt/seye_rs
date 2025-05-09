@@ -6,9 +6,9 @@ pub const KILOBYTE: usize = 1024;
 pub const MEGABYTE: usize = 1024 * KILOBYTE;
 pub const GIGABYTE: usize = 1024 * MEGABYTE;
 
-pub fn get_shorthand_memory_limit(amount: i64) -> String {
+pub fn get_shorthand_file_size(amount: i64) -> String {
     if amount == 0 {
-        return format!("unlimited");
+        return format!("0B");
     }
     let mut sign = "+";
     let mut amount_abs = amount as usize;
