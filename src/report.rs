@@ -60,15 +60,15 @@ pub fn report_changes(target_path: PathBuf, output_path: PathBuf, merge_nesting_
     let limit = combined_diffs.len();
     let mut total: i64 = 0;
     for i in 0..limit {
+        let mut t = format!("{:?}",combined_diffs[i].diff_type).to_ascii_uppercase();
+        let _ = t.split_off(3);
         if (combined_diffs[i].size_here + combined_diffs[i].size_below) == 0 {
             continue;
         }
-        let mut t = format!("{:?}",combined_diffs[i].diff_type).to_ascii_uppercase();
-        let _ = t.split_off(3);
-        println!("{}: {:?} ({})", t, combined_diffs[i].p, get_shorthand_memory_limit(combined_diffs[i].size_here + combined_diffs[i].size_below));
+        println!("{}: {:?} ({})", t, combined_diffs[i].p, get_shorthand_file_size(combined_diffs[i].size_here + combined_diffs[i].size_below));
         total += combined_diffs[i].size_here + combined_diffs[i].size_below;
     }
-    println!("Total change is: {}", get_shorthand_memory_limit(total));
+    println!("Total change is: {}", get_shorthand_file_size(total));
 
     return Ok(());
 }
