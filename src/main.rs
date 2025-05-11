@@ -25,6 +25,7 @@ struct Config {
     show_perf_info: bool,
     // sorted: bool,
     move_depth_threshold: i32,
+    show_moved_files: bool,
 }
 
 fn main() {
@@ -36,6 +37,7 @@ fn main() {
         show_perf_info:       false,
         // sorted:               false,
         move_depth_threshold: 0,
+        show_moved_files:     false,
     };
 
     let args: Vec<String> = env::args().collect();
@@ -180,7 +182,7 @@ fn main() {
                 output_pb = su_path;
             }
             
-            let res = report::report_changes(target_pb, output_pb, cfg.move_depth_threshold);
+            let res = report::report_changes(target_pb, output_pb, cfg.move_depth_threshold, cfg.show_moved_files);
             match res {
                 Ok(()) => {}
                 Err(e) => {
@@ -209,7 +211,7 @@ fn validate_get_pathbuf(p: &String) -> std::io::Result<PathBuf> {
 
 fn eval_optional_args(cmd: &str, args: Vec<&&String>, cfg: &mut Config) -> std::io::Result<()> {    
     let mut i = 0;
-    let valid_command_options = vec!["-p", "-md", "-t", "-fdl", "-mvd"];
+    let valid_command_options = vec!["-p", "-md", "-t", "-fdl", "-mvd", "-mvs"];
     while i < args.len() {
         let before_directory_args = i < args.len() - 2;
         let a = args[i].as_str();
@@ -272,8 +274,19 @@ fn eval_optional_args(cmd: &str, args: Vec<&&String>, cfg: &mut Config) -> std::
                     }
                 }
             }
-            "report" => {
+            "report" => 'report: {
                 // NO VALUE OPTIONS
+                let mut is_no_val_opt = true;
+                match a {
+                    "-mvs" => {
+                        cfg.show_moved_files = true;
+                    }
+                    _ => {is_no_val_opt = false;}
+                }
+                if is_no_val_opt {
+                    break 'report;
+                }
+
                 // ONE VALUE OPTIONS
                 i += 1;
                 if i >= args.len() {
@@ -322,6 +335,7 @@ Scan Arguments:
 Report Arguments:
     -mvd <num>            (default:     0)  Specifies maximum file tree difference for two matching files in different locations to be considered a MOVE,
                                             otherwise their entries are treated as separate REMOVEs and ADDs
+    -mvs                                    Show moved files in the report output (even though the size of a MOVE is 0B)
 ", 
     DEFAULT_NUM_THREADS, DEFAULT_FD_LIMIT);
 }

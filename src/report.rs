@@ -2,7 +2,7 @@ use std::{cmp::Ordering, io::Error, path::PathBuf};
 
 use crate::{diff::{CDirEntryDiff, DiffType}, save::get_hash_iteration_count_from_file_names, scan::add_combined_diffs, utility::get_shorthand_file_size};
 
-pub fn report_changes(target_path: PathBuf, output_path: PathBuf, merge_nesting_diff: i32) -> std::io::Result<()> {
+pub fn report_changes(target_path: PathBuf, output_path: PathBuf, merge_nesting_diff: i32, show_moved_files: bool) -> std::io::Result<()> {
     let save_file_data = get_hash_iteration_count_from_file_names(&target_path, output_path.to_path_buf());
     let path_hash = save_file_data.0;
     let mut path_to_initial = output_path.clone();
@@ -126,7 +126,7 @@ pub fn report_changes(target_path: PathBuf, output_path: PathBuf, merge_nesting_
     for i in 0..limit {
         let mut t = format!("{:?}",combined_diffs[i].diff_type).to_ascii_uppercase();
         let _ = t.split_off(3);
-        if combined_diffs[i].diff_type == DiffType::Move {
+        if show_moved_files && combined_diffs[i].diff_type == DiffType::Move {
             println!("{}: {:?} -> {:?} ({})", t, combined_diffs[i].p, moved_to_paths[moved_to_idx], get_shorthand_file_size(combined_diffs[i].size_here + combined_diffs[i].size_below));
             moved_to_idx += 1;
             continue;
