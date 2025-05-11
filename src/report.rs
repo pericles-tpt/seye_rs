@@ -49,30 +49,16 @@ pub fn report_changes(target_path: PathBuf, output_path: PathBuf, merge_nesting_
                     // ONLY consider if a move IF their nesting diff < merge_diff
                     let ap = &combined_diffs[i].p;
                     let bp = &combined_diffs[i + 1].p;
-                    let a_parts: Vec<_> = ap.iter().collect();
-                    let b_parts: Vec<_> = bp.iter().collect();
+                    let a_parts: Vec<_> = ap.iter().rev().collect();
+                    let b_parts: Vec<_> = bp.iter().rev().collect();
                     let mut j = 0;
-                    let mut max_num_conseq_diffs = 0;
-                    let mut num_conseq_diffs = 0;
-                    // TODO: Fix `merge_nesting_diff` == 0 condition, should show MOVE with same parent directory
                     while j < a_parts.len() && j < b_parts.len() {
-                        if a_parts[j] == b_parts[j] {
-                            if num_conseq_diffs > max_num_conseq_diffs {
-                                max_num_conseq_diffs = num_conseq_diffs;
-                            }
-                            num_conseq_diffs = 0;
-                        } else {
-                            num_conseq_diffs += 1;
+                        if a_parts[j] != b_parts[j] {
+                            break;
                         }
                         j += 1;
                     }
-                    if j < a_parts.len() && max_num_conseq_diffs < (a_parts.len() - j) {
-                        max_num_conseq_diffs = a_parts.len() - j;
-                    }
-                    if j < b_parts.len() && max_num_conseq_diffs < (b_parts.len() - j) {
-                        max_num_conseq_diffs = b_parts.len() - j;
-                    }
-                    let mark_as_merge = merge_nesting_diff > 0 && max_num_conseq_diffs <= merge_path_diff;
+                    let mark_as_merge = j <= merge_path_diff;
                     let mut rem = combined_diffs[i].clone();
                     let mut add = combined_diffs[i + 1].clone();
                     let mut dn = rem.diff_no;

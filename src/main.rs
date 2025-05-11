@@ -333,8 +333,12 @@ Scan Arguments:
     -t   <num>            (default:    {})  Specify the number of threads, MUST BE >= 2
     -fdl <num>            (default:  {})  Specify the maximum 'files + dirs' to traverse before returning results from each thread
 Report Arguments:
-    -mvd <num>            (default:     0)  Specifies maximum file tree difference for two matching files in different locations to be considered a MOVE,
-                                            otherwise their entries are treated as separate REMOVEs and ADDs
+    -mvd <num>            (default:     0)  Specifies the maximum directory depth difference for two matching entries in different locations to be
+                                            classified as a MOVE, otherwise they're treated as separate REMOVEs and ADDs
+                                            e.g. In the following case an `-mvd` value >= 3 will classify this as a MOVE
+                                                 a:    4     3    2   1     0            4     3    2   1     0
+                                                 a: /jumps/over/the/lazy/dog.txt, b: /jumps/under/the/lazy/dog.txt
+
     -mvs                                    Show moved files in the report output (even though the size of a MOVE is 0B)
 ", 
     DEFAULT_NUM_THREADS, DEFAULT_FD_LIMIT);
