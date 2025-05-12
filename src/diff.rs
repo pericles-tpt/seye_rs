@@ -123,7 +123,7 @@ pub fn add_diffs_to_items<I: Clone + std::fmt::Debug + PartialEq, D: Clone + std
         }
         if modify {
             add_diff_to_item(&mut curr, mod_diffs[mod_diff_idx].clone());
-            items[look_idx] = curr;
+            items[assign_idx] = curr;
             mod_diff_idx += 1;
         }
         assign_idx += 1;
