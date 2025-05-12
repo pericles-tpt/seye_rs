@@ -379,7 +379,10 @@ fn merge_dir_diff(old: CDirEntryDiff, new: CDirEntryDiff) -> Option<CDirEntryDif
     if (old.diff_type == DiffType::Remove && new.diff_type == DiffType::Add) || 
        (old.diff_type == DiffType::Add && new.diff_type == DiffType::Remove) {
         if diffs_match_except_time(&old, &new) {
-            return None
+            if new.diff_type == DiffType::Add {
+                return Some(new);
+            }
+            return None;
         }
     } else if new.diff_type != DiffType::Modify {
         return Some(new);
@@ -412,7 +415,7 @@ fn diffs_match_except_time(old: &CDirEntryDiff, new: &CDirEntryDiff) -> bool {
     return old.p == new.p 
     && (old.files_here + old.files_below) == (new.files_here + new.files_below)
     && (old.dirs_here + old.dirs_below) == (new.dirs_here + new.dirs_below)
-    && (old.size_here + old.size_below) - (new.size_here + new.size_below) == 0
+    && (old.size_here + old.size_below) + (new.size_here + new.size_below) == 0
 }
 
 fn merge_file_diffs(old: Box<[FileEntryDiff]>, new: Box<[FileEntryDiff]>) -> Box<[FileEntryDiff]> {
@@ -440,19 +443,19 @@ fn merge_sorted_vec_duplicates<T: Clone>(arr: &mut Vec::<T>, is_dup: fn(a: &T, b
         return 0;
     }
     
-    let mut assign_idx = 1;
-    let mut look_idx = 1;
-    let mut assign_at = arr[0].clone();
+    let mut assign_idx = 0;
+    let mut look_idx = 0;
     while look_idx < arr.len() {
         let look_at = arr[look_idx].clone();
-        
-        if is_dup(&assign_at, &look_at) {
+        if (look_idx + 1) < arr.len() && is_dup(&look_at, &arr[look_idx + 1]) {
+            let next = arr[look_idx + 1].clone();
             // Merge two elements INTO the assign idx
-            assign_idx -= 1;
-            let maybe_elem = merge_elems(assign_at, look_at);
+            let maybe_elem = merge_elems(look_at, next);
             if maybe_elem.is_some() {
                 arr[assign_idx] = maybe_elem.unwrap();
             }
+            look_idx += 1;
+            assign_idx -= 1;
         } else {
             // `skipped_elems` -> element at `assign_idx` was merged into a previous element and should be overriden
             let skipped_elems = look_idx > assign_idx;
@@ -460,7 +463,6 @@ fn merge_sorted_vec_duplicates<T: Clone>(arr: &mut Vec::<T>, is_dup: fn(a: &T, b
                 arr[assign_idx] = arr[look_idx].clone();
             }
         }
-        assign_at = arr[assign_idx].clone();
         
         assign_idx += 1;
         look_idx += 1;
@@ -474,6 +476,9 @@ fn merge_file_diff(old: FileEntryDiff, new: FileEntryDiff) -> Option<FileEntryDi
     if (old.diff_type == DiffType::Remove && new.diff_type == DiffType::Add) ||
        (old.diff_type == DiffType::Add && new.diff_type == DiffType::Remove) {
         if file_diffs_match_except_time(&old, &new) {
+            if new.diff_type == DiffType::Add {
+                return Some(new);
+            }
             return None
         }
     } else if new.diff_type != DiffType::Modify {
