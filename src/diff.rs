@@ -178,7 +178,8 @@ pub fn merge_dir_diff_to_entry(ent: &mut CDirEntry, d: CDirEntryDiff) {
     ent.memory_usage_here += d.memory_usage_here;
     ent.memory_usage_below += d.memory_usage_below;
 
-    _ = add_diffs_to_items::<FileEntry, FileEntryDiff>(&mut ent.files.to_vec(), &mut d.files.to_vec(), 
+    let mut files_vec = ent.files.to_vec();
+    _ = add_diffs_to_items::<FileEntry, FileEntryDiff>(&mut files_vec, &mut d.files.to_vec(), 
     |a, b|{return a.bn.cmp(&b.bn)}, 
     |it, d| {return it.bn == d.bn}, 
     |d|{return d.diff_type == DiffType::Add}, 
@@ -186,6 +187,8 @@ pub fn merge_dir_diff_to_entry(ent: &mut CDirEntry, d: CDirEntryDiff) {
     get_entry_from_file_diff, 
     merge_file_diff_to_entry);
     // add_diffs_to_files(&mut ent.files.to_vec(), d.files)
+
+    ent.files = files_vec.into_boxed_slice();
 }
 
 pub fn merge_file_diff_to_entry(ent: &mut FileEntry, d: FileEntryDiff) {
