@@ -110,7 +110,7 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
     let num_scan_files = curr_scan[0].files_here + curr_scan[0].files_below;
     let num_scan_dirs = curr_scan[0].dirs_here + curr_scan[0].dirs_below + 1;
 
-    let diffs: Vec<CDirEntryDiff> = diff_saves(initial_scan, curr_scan, iteration_count as u16 + 1, min_diff_bytes);
+    let diffs: Vec<CDirEntryDiff> = diff_saves(initial_scan, curr_scan, min_diff_bytes);
     if diffs.len() > 0 {
         let mut path_to_subsequent = output_path.clone();
         path_to_subsequent.push(format!("{}_diff_{}", path_hash, iteration_count + 1));
@@ -149,7 +149,7 @@ pub fn add_combined_diffs(diff_path: &std::path::PathBuf, diff_count: u16) -> st
         curr_diff_path.set_file_name(format!("{}_{}", base_file_name.to_str().unwrap(), i));
         let next_diff = read_diff_file(curr_diff_path)?;
 
-        add_dir_diffs(&mut combined_diffs, &next_diff);
+        combined_diffs = add_dir_diffs(combined_diffs, next_diff);
     }
 
     return Ok(combined_diffs);

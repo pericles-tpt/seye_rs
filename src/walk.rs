@@ -6,8 +6,6 @@ use serde::{Deserialize, Deserializer, Serialize};
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct FileEntry {
     pub sz: u64,
-    pub is_symlink: bool,
-
     pub bn: OsString,
     pub md: Option<SystemTime>,
 }
@@ -15,8 +13,6 @@ impl Default for FileEntry {
     fn default() -> Self {
         FileEntry {
             sz: 0,
-            is_symlink: false,
-
             bn: OsString::new(),
             md: None,
         }
@@ -37,6 +33,8 @@ pub struct CDirEntry {
 
     #[serde(deserialize_with = "deserialize_boxed_slice")]
     pub files: Box<[FileEntry]>,
+    #[serde(deserialize_with = "deserialize_boxed_slice")]
+    pub symlinks: Box<[FileEntry]>,
 }
 
 fn deserialize_boxed_slice<'de, D>(deserializer: D) -> Result<Box<[FileEntry]>, D::Error>
@@ -98,6 +96,7 @@ pub fn walk_until_end(root: std::path::PathBuf, parent_map: &mut HashMap<std::pa
         let curr_idx = insert_dir_entry(&md, &mp, &mut df, parent_map);
 
         let mut file_entries: Vec<FileEntry> = Vec::with_capacity(entries.len());
+        let mut symlink_entries: Vec<FileEntry> = Vec::with_capacity(entries.len());
         for ent in entries {
             let Ok(val) = ent else { continue };
             let Ok(ft) = val.file_type() else { continue };
@@ -134,11 +133,16 @@ pub fn walk_until_end(root: std::path::PathBuf, parent_map: &mut HashMap<std::pa
             let fmd = maybe_fmd.unwrap();
 
             let basename_string = basename.to_os_string();
-            insert_file_entry(&fmd, basename_string, &mut file_entries);
+            if fmd.is_symlink() {
+                insert_file_entry(&fmd, basename_string, &mut symlink_entries);
+            } else {
+                insert_file_entry(&fmd, basename_string, &mut file_entries);
+            }
 
             df[curr_idx].files_here += 1;
             df[curr_idx].size_here += fmd.size() as i64;
         }        
+        df[curr_idx].symlinks = symlink_entries.into_boxed_slice();
         df[curr_idx].files = file_entries.into_boxed_slice();
     }
     
@@ -173,6 +177,7 @@ pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, _skip_set: &
         let curr_idx = insert_dir_entry(&md, &dir_q[d_idx], other_entries, &mut pm);
         let entries: Vec<Result<DirEntry, std::io::Error>> = rd.unwrap().collect();
         let mut file_entries: Vec<FileEntry> = Vec::with_capacity(entries.len());
+        let mut symlink_entries: Vec<FileEntry> = Vec::with_capacity(entries.len());
         for ent in entries {
             let Ok(val) = ent else { continue };
             let Ok(ft) = val.file_type() else { continue };
@@ -194,11 +199,16 @@ pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, _skip_set: &
                 
             f_idx += 1;
             let filename = val.file_name();
-            insert_file_entry(&fmd, filename, &mut file_entries);
+            if fmd.is_symlink() {
+                insert_file_entry(&fmd, filename, &mut symlink_entries);
+            } else {
+                insert_file_entry(&fmd, filename, &mut file_entries);
+            }
     
             other_entries[curr_idx].files_here += 1;
             other_entries[curr_idx].size_here += fmd.size() as i64;
         }        
+        other_entries[curr_idx].symlinks = symlink_entries.into_boxed_slice();
         other_entries[curr_idx].files = file_entries.into_boxed_slice();
 
         d_idx += 1;
@@ -216,7 +226,6 @@ fn insert_file_entry(md: &Metadata, bn: OsString, dest: &mut Vec<FileEntry>) -> 
         bn: bn,
         sz: md.len(),
         md: t,
-        is_symlink: md.is_symlink()
     };
     dest.push(e);
     return dest.len() - 1;
@@ -240,6 +249,7 @@ fn insert_dir_entry(md: &Metadata, p: &PathBuf, all_dirs: &mut Vec<CDirEntry>, p
         size_below: 0,
 
         files: Box::new([FileEntry::default()]),
+        symlinks: Box::new([FileEntry::default()]),
     };
     all_dirs.push(e);
     path_idx_map.insert(pb, all_dirs.len() - 1);

@@ -93,7 +93,7 @@ pub fn read_diff_file(file_path: PathBuf) -> io::Result<Vec<CDirEntryDiff>> {
     }
 }
 
-pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, diff_no: u16, min_diff_bytes: usize) -> std::vec::Vec<CDirEntryDiff> {
+pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, min_diff_bytes: usize) -> std::vec::Vec<CDirEntryDiff> {
     let mut diffs: Vec<CDirEntryDiff> = Vec::new();
     if o.len() == 0 && n.len() == 0 {
         return diffs;
@@ -143,7 +143,6 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, diff_no: u16, min_diff_b
                 if diff_passes_threshold {
                     diffs.push(CDirEntryDiff{
                         diff_type: DiffType::Add,
-                        diff_no: diff_no,
                         
                         p: new.p.clone(),
                         t_diff: get_t_diff_from_md(new.md, false),
@@ -155,7 +154,8 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, diff_no: u16, min_diff_b
                         size_here: new.size_here as i64,
                         size_below: new.size_below as i64,
                     
-                        files: get_file_diffs(Vec::new(), new.files.to_vec(), diff_no),
+                        files: get_file_diffs(Vec::new(), new.files.to_vec(),),
+                        symlinks: get_file_diffs(Vec::new(), new.symlinks.to_vec()),
                     })
                 }
             },
@@ -165,7 +165,6 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, diff_no: u16, min_diff_b
                 if diff_passes_threshold {
                     diffs.push(CDirEntryDiff{
                         diff_type: DiffType::Remove,
-                        diff_no: diff_no,
                         
                         p: old.p.clone(),
                         t_diff: get_t_diff_from_md(old.md, true),
@@ -177,12 +176,13 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, diff_no: u16, min_diff_b
                         size_here: old.size_here as i64 * -1,
                         size_below: old.size_below as i64 * -1,
                     
-                        files: get_file_diffs(old.files.to_vec(), Vec::new(), diff_no),
+                        files: get_file_diffs(old.files.to_vec(), Vec::new()),
+                        symlinks: get_file_diffs(old.symlinks.to_vec(), Vec::new()),
                     })
                 }
             },
             DiffType::Modify => {
-                let maybe_modified_dir_diff = get_maybe_modified_dir_diff(old.clone(), new.clone(), diff_no);
+                let maybe_modified_dir_diff = get_maybe_modified_dir_diff(old.clone(), new.clone());
                 match maybe_modified_dir_diff {
                     Some(d) => {
                         diff_passes_threshold = d.size_here.abs() >= min_diff_bytes as i64;
@@ -203,7 +203,7 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, diff_no: u16, min_diff_b
     return diffs;
 }
 
-fn get_maybe_modified_dir_diff(ent_o: CDirEntry, ent_n: CDirEntry, diff_no: u16) -> Option<CDirEntryDiff> {    
+fn get_maybe_modified_dir_diff(ent_o: CDirEntry, ent_n: CDirEntry) -> Option<CDirEntryDiff> {    
     let diff_here = ent_o.dirs_here != ent_n.dirs_here || ent_o.files_here != ent_n.files_here || ent_o.size_here != ent_n.size_here;
     if !diff_here {
         return None;
@@ -214,7 +214,6 @@ fn get_maybe_modified_dir_diff(ent_o: CDirEntry, ent_n: CDirEntry, diff_no: u16)
     
     return Some(CDirEntryDiff {
         diff_type: DiffType::Modify,
-        diff_no: diff_no,
         
         p: ent_n.p,
         t_diff: TDiff{
@@ -229,7 +228,8 @@ fn get_maybe_modified_dir_diff(ent_o: CDirEntry, ent_n: CDirEntry, diff_no: u16)
         size_here: (ent_n.size_here - ent_o.size_here) as i64,
         size_below: (ent_n.size_below - ent_o.size_below) as i64,
     
-        files: get_file_diffs(ent_o.files.to_vec(), ent_n.files.to_vec(), diff_no),
+        files: get_file_diffs(ent_o.files.to_vec(), ent_n.files.to_vec()),
+        symlinks: get_file_diffs(ent_o.symlinks.to_vec(), ent_n.symlinks.to_vec()),
     });
 }
 
@@ -247,7 +247,7 @@ fn get_t_diff_from_md(md: Option<SystemTime>, negate: bool) -> TDiff {
     return ret;
 }
 
-fn get_file_diffs(o: Vec<FileEntry>, n: Vec<FileEntry>, diff_no: u16) -> Box<[FileEntryDiff]> {
+fn get_file_diffs(o: Vec<FileEntry>, n: Vec<FileEntry>) -> Box<[FileEntryDiff]> {
     let box_size: usize = if n.len() > o.len() {
         n.len()
     } else {
@@ -290,8 +290,6 @@ fn get_file_diffs(o: Vec<FileEntry>, n: Vec<FileEntry>, diff_no: u16) -> Box<[Fi
                 bn: ent_n.bn,
                 t_diff: get_t_diff_from_md(ent_n.md, false),
                 sz: ent_n.sz as i128,
-                diff_no: diff_no,
-                is_symlink: ent_n.is_symlink,
             });
             nidx += 1;
             continue;
@@ -307,8 +305,6 @@ fn get_file_diffs(o: Vec<FileEntry>, n: Vec<FileEntry>, diff_no: u16) -> Box<[Fi
                 bn: ent_n.bn,
                 t_diff: get_t_diff_from_md(ent_n.md, false),
                 sz: ent_n.sz as i128,
-                diff_no: diff_no,      
-                is_symlink: ent_n.is_symlink,         
             });
 
             // TODO: This doesn't recognise if `base_path_o` was ALREADY added to diff, should check if it exists in diff and remove it...
@@ -322,7 +318,7 @@ fn get_file_diffs(o: Vec<FileEntry>, n: Vec<FileEntry>, diff_no: u16) -> Box<[Fi
         }
 
         // Modify (maybe)
-        let maybe_modified_dir_diff = get_maybe_modified_file_diff(ent_o, ent_n, diff_no);
+        let maybe_modified_dir_diff = get_maybe_modified_file_diff(ent_o, ent_n);
         match maybe_modified_dir_diff {
             Some(d) => {diffs.push(d)},
             None => {}
@@ -341,32 +337,43 @@ fn get_file_diffs(o: Vec<FileEntry>, n: Vec<FileEntry>, diff_no: u16) -> Box<[Fi
             bn: ent.bn.clone(),
             t_diff: get_t_diff_from_md(ent.md, true),
             sz: ent.sz as i128 * -1,
-            diff_no: diff_no,
-            is_symlink: ent.is_symlink,
         })
     }
 
     return diffs.into_boxed_slice();
 }
 
-pub fn add_dir_diffs(to: &mut Vec<CDirEntryDiff>, from: &Vec<CDirEntryDiff>) {
-    to.extend_from_slice(from);
-    to.sort_by(|a, b| {
-        let path_cmp = a.p.cmp(&b.p);
+pub fn add_dir_diffs(old: Vec<CDirEntryDiff>, new: Vec<CDirEntryDiff>) -> Vec<CDirEntryDiff> {
+    let mut ret: Vec<CDirEntryDiff>;
+    
+    let mut is_new_arr = vec![false; old.len()];
+    is_new_arr.extend(vec![true; new.len()]);
+    
+    ret = old;
+    ret.extend(new);
+
+    let mut idx_keys: Vec<(usize, CDirEntryDiff)> = ret.into_iter().enumerate().collect();
+    idx_keys.sort_by(|a, b| {
+        let path_cmp = a.1.p.cmp(&b.1.p);
         if path_cmp == Ordering::Equal {
-            if a.diff_no <= b.diff_no {
+            let rhs_newer = !is_new_arr[a.0] && is_new_arr[b.0];
+            if rhs_newer {
                 return Ordering::Less;
-            } else {
-                return Ordering::Greater;
             }
+            return Ordering::Greater;
         }
         return path_cmp;
     });
 
-    let new_len = merge_sorted_vec_duplicates::<CDirEntryDiff>(to, |a: &CDirEntryDiff, b: &CDirEntryDiff| {
+    ret = idx_keys.iter().map(|(_, entry)| entry.to_owned() ).collect();
+    let new_len = merge_sorted_vec_duplicates::<CDirEntryDiff>(&mut ret, |a: &CDirEntryDiff, b: &CDirEntryDiff| {
         return a.p == b.p;
     }, merge_dir_diff);
-    to.resize(new_len, to[0].clone());
+    if ret.len() > 0 {
+        ret.resize(new_len, ret[0].clone());
+    }
+
+    return ret;
 }
 
 fn merge_dir_diff(old: CDirEntryDiff, new: CDirEntryDiff) -> Option<CDirEntryDiff> {
@@ -388,7 +395,6 @@ fn merge_dir_diff(old: CDirEntryDiff, new: CDirEntryDiff) -> Option<CDirEntryDif
             s_diff: old.t_diff.s_diff + new.t_diff.s_diff,
             ns_diff: old.t_diff.ns_diff + new.t_diff.ns_diff,
         },
-        diff_no: new.diff_no,
     
         files_here: old.files_here + new.files_here,
         files_below: old.files_below + new.files_below,
@@ -400,6 +406,7 @@ fn merge_dir_diff(old: CDirEntryDiff, new: CDirEntryDiff) -> Option<CDirEntryDif
         diff_type: new.diff_type,
     
         files: merge_file_diffs(old.files, new.files),
+        symlinks: merge_file_diffs(old.symlinks, new.symlinks),
     });
 }
 
@@ -411,23 +418,33 @@ fn diffs_match_except_time(old: &CDirEntryDiff, new: &CDirEntryDiff) -> bool {
 }
 
 fn merge_file_diffs(old: Box<[FileEntryDiff]>, new: Box<[FileEntryDiff]>) -> Box<[FileEntryDiff]> {
+    let mut is_new_arr = vec![false; old.len()];
+    is_new_arr.extend(vec![true; new.len()]);
+    
     let mut ret = [old, new].concat();
-    ret.sort_by(|a, b| {
-        let initial = a.bn.cmp(&b.bn);
-        if initial == Ordering::Equal {
-            if a.diff_no <= b.diff_no {
-                return Ordering::Less
+    
+    let mut idx_keys: Vec<(usize, &FileEntryDiff)> = ret.iter().enumerate().collect();
+    idx_keys.sort_by(|a, b| {
+        let path_cmp = a.1.bn.cmp(&b.1.bn);
+        if path_cmp == Ordering::Equal {
+            let rhs_newer = !is_new_arr[a.0] && is_new_arr[b.0];
+            if rhs_newer {
+                return Ordering::Less;
             }
-            return Ordering::Greater
+            return Ordering::Greater;
         }
-        return initial;
+        return path_cmp;
     });
 
+    ret = idx_keys.into_iter().map(|(_, entry)| entry.to_owned() ).collect();
     let new_len = merge_sorted_vec_duplicates::<FileEntryDiff>(&mut ret, |a: &FileEntryDiff, b: &FileEntryDiff| {
         return a.bn == b.bn;
     }, merge_file_diff);
+    if ret.len() > 0 {
+        ret.resize(new_len, ret[0].clone());
+    }
 
-    return ret[0..new_len].to_vec().into_boxed_slice();
+    return ret.into_boxed_slice();
 }
 
 fn merge_sorted_vec_duplicates<T: Clone>(arr: &mut Vec::<T>, is_dup: fn(a: &T, b: &T) -> bool, merge_elems: fn(old: T, new: T) -> Option<T>) -> usize {
@@ -484,19 +501,16 @@ fn merge_file_diff(old: FileEntryDiff, new: FileEntryDiff) -> Option<FileEntryDi
             s_diff: old.t_diff.s_diff + new.t_diff.s_diff,
             ns_diff: old.t_diff.ns_diff + new.t_diff.ns_diff,
         },
-        diff_no: new.diff_no,
         diff_type: new.diff_type,
-        is_symlink: new.is_symlink,
     });
 }
 
 fn file_diffs_match_except_time(old: &FileEntryDiff, new: &FileEntryDiff) -> bool {
     return old.bn == new.bn
-    && old.is_symlink == new.is_symlink
     && old.sz == new.sz
 }
 
-fn get_maybe_modified_file_diff(ent_o: FileEntry, ent_n: FileEntry, diff_no: u16) -> Option<FileEntryDiff> {    
+fn get_maybe_modified_file_diff(ent_o: FileEntry, ent_n: FileEntry) -> Option<FileEntryDiff> {    
     if ent_o.md == ent_n.md {
         return None;
     }
@@ -513,7 +527,5 @@ fn get_maybe_modified_file_diff(ent_o: FileEntry, ent_n: FileEntry, diff_no: u16
             s_diff: t_diff_n.s_diff - t_diff_o.s_diff,
             ns_diff: t_diff_n.ns_diff - t_diff_o.ns_diff,
         },
-        diff_no: diff_no,
-        is_symlink: ent_n.is_symlink,
     });
 }

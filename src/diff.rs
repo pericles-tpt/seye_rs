@@ -16,8 +16,6 @@ pub struct FileEntryDiff {
     pub sz: i128,
     pub t_diff: TDiff,
     pub diff_type: DiffType,
-    pub diff_no: u16,
-    pub is_symlink: bool,
 }
 impl Default for FileEntryDiff {
     fn default() -> Self {
@@ -29,8 +27,6 @@ impl Default for FileEntryDiff {
                 ns_diff: 0,
             },
             diff_type: DiffType::Modify,
-            diff_no: 0,
-            is_symlink: false
         }
     }
 }
@@ -45,7 +41,6 @@ pub struct TDiff {
 pub struct CDirEntryDiff {
     pub p: PathBuf,
     pub t_diff: TDiff,
-    pub diff_no: u16,
 
     pub files_here: usize,
     pub files_below: usize,
@@ -58,6 +53,8 @@ pub struct CDirEntryDiff {
 
     #[serde(deserialize_with = "deserialize_boxed_slice")]
     pub files: Box<[FileEntryDiff]>,
+    #[serde(deserialize_with = "deserialize_boxed_slice")]
+    pub symlinks: Box<[FileEntryDiff]>,
 }
 
 fn deserialize_boxed_slice<'de, D>(deserializer: D) -> Result<Box<[FileEntryDiff]>, D::Error>
@@ -182,9 +179,18 @@ pub fn merge_dir_diff_to_entry(ent: &mut CDirEntry, d: CDirEntryDiff) {
     |d|{return d.diff_type == DiffType::Remove}, 
     get_entry_from_file_diff, 
     merge_file_diff_to_entry);
-    // add_diffs_to_files(&mut ent.files.to_vec(), d.files)
-
     ent.files = files_vec.into_boxed_slice();
+
+    let mut symlinks_vec = ent.symlinks.to_vec();
+    _ = add_diffs_to_items::<FileEntry, FileEntryDiff>(&mut symlinks_vec, &mut d.symlinks.to_vec(), 
+    |a, b|{return a.bn.cmp(&b.bn)}, 
+    |it, d| {return it.bn == d.bn}, 
+    |d|{return d.diff_type == DiffType::Add}, 
+    |d|{return d.diff_type == DiffType::Remove}, 
+    get_entry_from_file_diff, 
+    merge_file_diff_to_entry);
+    ent.symlinks = symlinks_vec.into_boxed_slice();
+
 }
 
 pub fn merge_file_diff_to_entry(ent: &mut FileEntry, d: FileEntryDiff) {
@@ -203,6 +209,7 @@ pub fn get_entry_from_dir_diff(d: CDirEntryDiff) -> CDirEntry {
         size_here: d.size_here,
         size_below: d.size_below,
         files: get_f_entries_from_f_diffs(d.files),
+        symlinks: get_f_entries_from_f_diffs(d.symlinks),
     }
 }
 
@@ -211,7 +218,6 @@ pub fn get_entry_from_file_diff(d: FileEntryDiff) -> FileEntry {
         bn: d.bn,
         sz: d.sz as u64,
         md: t_diff_to_system_time(d.t_diff, None),
-        is_symlink: d.is_symlink,
     }
 }
 

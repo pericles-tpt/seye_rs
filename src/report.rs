@@ -61,19 +61,14 @@ pub fn report_changes(target_path: PathBuf, output_path: PathBuf, merge_nesting_
                     let mark_as_merge = j <= merge_path_diff;
                     let mut rem = combined_diffs[i].clone();
                     let mut add = combined_diffs[i + 1].clone();
-                    let mut dn = rem.diff_no;
                     if combined_diffs[i].diff_type == DiffType::Add {
                         rem = combined_diffs[i + 1].clone();
                         add = combined_diffs[i].clone();
-                    }
-                    if add.diff_no > rem.diff_no {
-                        dn = add.diff_no;
                     }
                     if mark_as_merge {
                         combined_diff_sl.push(CDirEntryDiff{
                             p: rem.p,
                             t_diff: add.t_diff,
-                            diff_no: dn,
                         
                             files_here: add.files_here,
                             files_below: add.files_below,
@@ -84,6 +79,7 @@ pub fn report_changes(target_path: PathBuf, output_path: PathBuf, merge_nesting_
                             
                             diff_type: DiffType::Move,
                             files: add.files,
+                            symlinks: add.symlinks,
                         });
                         moved_to_paths.push(add.p);
                     }
