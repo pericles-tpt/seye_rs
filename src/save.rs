@@ -154,8 +154,6 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, diff_no: u16, min_diff_b
                         dirs_below: new.dirs_below,
                         size_here: new.size_here as i64,
                         size_below: new.size_below as i64,
-                        memory_usage_here: new.memory_usage_here,
-                        memory_usage_below: new.memory_usage_below,
                     
                         files: get_file_diffs(Vec::new(), new.files.to_vec(), diff_no),
                     })
@@ -178,8 +176,6 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, diff_no: u16, min_diff_b
                         dirs_below: old.dirs_below,
                         size_here: old.size_here as i64 * -1,
                         size_below: old.size_below as i64 * -1,
-                        memory_usage_here: old.memory_usage_here,
-                        memory_usage_below: old.memory_usage_below,
                     
                         files: get_file_diffs(old.files.to_vec(), Vec::new(), diff_no),
                     })
@@ -232,8 +228,6 @@ fn get_maybe_modified_dir_diff(ent_o: CDirEntry, ent_n: CDirEntry, diff_no: u16)
         dirs_below: ent_n.dirs_below - ent_o.dirs_below,
         size_here: (ent_n.size_here - ent_o.size_here) as i64,
         size_below: (ent_n.size_below - ent_o.size_below) as i64,
-        memory_usage_here: ent_n.memory_usage_here - ent_o.memory_usage_here,
-        memory_usage_below: ent_n.memory_usage_below - ent_o.memory_usage_below,
     
         files: get_file_diffs(ent_o.files.to_vec(), ent_n.files.to_vec(), diff_no),
     });
@@ -402,8 +396,6 @@ fn merge_dir_diff(old: CDirEntryDiff, new: CDirEntryDiff) -> Option<CDirEntryDif
         dirs_below: old.dirs_below + new.dirs_below,
         size_here: old.size_here + new.size_here,
         size_below: old.size_below + new.size_below,
-        memory_usage_here: old.memory_usage_here + new.memory_usage_here,
-        memory_usage_below: old.memory_usage_below + new.memory_usage_below,
         
         diff_type: new.diff_type,
     

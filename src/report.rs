@@ -81,8 +81,6 @@ pub fn report_changes(target_path: PathBuf, output_path: PathBuf, merge_nesting_
                             dirs_below: add.dirs_below,
                             size_here: 0,
                             size_below: 0,
-                            memory_usage_here: add.memory_usage_here,
-                            memory_usage_below: add.memory_usage_below,
                             
                             diff_type: DiffType::Move,
                             files: add.files,

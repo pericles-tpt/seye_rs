@@ -53,8 +53,6 @@ pub struct CDirEntryDiff {
     pub dirs_below: usize,
     pub size_here: i64,
     pub size_below: i64,
-    pub memory_usage_here: usize,
-    pub memory_usage_below: usize,
     
     pub diff_type: DiffType,
 
@@ -175,8 +173,6 @@ pub fn merge_dir_diff_to_entry(ent: &mut CDirEntry, d: CDirEntryDiff) {
     ent.dirs_below += d.dirs_below;
     ent.size_here += d.size_here;
     ent.size_below += d.size_below;
-    ent.memory_usage_here += d.memory_usage_here;
-    ent.memory_usage_below += d.memory_usage_below;
 
     let mut files_vec = ent.files.to_vec();
     _ = add_diffs_to_items::<FileEntry, FileEntryDiff>(&mut files_vec, &mut d.files.to_vec(), 
@@ -206,8 +202,6 @@ pub fn get_entry_from_dir_diff(d: CDirEntryDiff) -> CDirEntry {
         dirs_below: d.dirs_below,
         size_here: d.size_here,
         size_below: d.size_below,
-        memory_usage_here: d.memory_usage_here,
-        memory_usage_below: d.memory_usage_below,
         files: get_f_entries_from_f_diffs(d.files),
     }
 }

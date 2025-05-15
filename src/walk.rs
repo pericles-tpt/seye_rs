@@ -1,4 +1,3 @@
-extern crate queues;
 use std::fs::metadata;
 use std::{ffi::OsString, fs::DirEntry, os::unix::fs::MetadataExt, time::SystemTime};
 use std::{collections::{HashMap, HashSet}, fs::{symlink_metadata, Metadata}, path::PathBuf, time::Duration};
@@ -32,8 +31,6 @@ pub struct CDirEntry {
     pub dirs_below: usize,
     pub size_here: i64,
     pub size_below: i64,
-    pub memory_usage_here: usize,
-    pub memory_usage_below: usize,
     
     pub p: PathBuf,
     pub md: Option<SystemTime>,
@@ -137,14 +134,10 @@ pub fn walk_until_end(root: std::path::PathBuf, parent_map: &mut HashMap<std::pa
             let fmd = maybe_fmd.unwrap();
 
             let basename_string = basename.to_os_string();
-            let basename_string_len = basename_string.len();
             insert_file_entry(&fmd, basename_string, &mut file_entries);
 
             df[curr_idx].files_here += 1;
             df[curr_idx].size_here += fmd.size() as i64;
-
-            let file_entry_size = size_of::<FileEntry>() + basename_string_len;
-            df[curr_idx].memory_usage_here += file_entry_size;
         }        
         df[curr_idx].files = file_entries.into_boxed_slice();
     }
@@ -201,14 +194,10 @@ pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, _skip_set: &
                 
             f_idx += 1;
             let filename = val.file_name();
-            let filename_len = filename.len();
             insert_file_entry(&fmd, filename, &mut file_entries);
     
             other_entries[curr_idx].files_here += 1;
             other_entries[curr_idx].size_here += fmd.size() as i64;
-    
-            let file_entry_size = size_of::<FileEntry>() + filename_len;
-            other_entries[curr_idx].memory_usage_here += file_entry_size;
         }        
         other_entries[curr_idx].files = file_entries.into_boxed_slice();
 
@@ -249,8 +238,6 @@ fn insert_dir_entry(md: &Metadata, p: &PathBuf, all_dirs: &mut Vec<CDirEntry>, p
         dirs_below: 0,
         size_here: 0,
         size_below: 0,
-        memory_usage_here: 0,
-        memory_usage_below: 0,
 
         files: Box::new([FileEntry::default()]),
     };

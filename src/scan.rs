@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, ffi::OsStr, fs::File, io::{BufWriter, Error}, mem, os::unix::fs::MetadataExt, path::PathBuf, time::SystemTime};
+use std::{collections::{HashMap, HashSet}, ffi::OsStr, fs::File, io::{BufWriter, Error}, os::unix::fs::MetadataExt, time::SystemTime};
 use crate::{diff::{add_diffs_to_items, get_entry_from_dir_diff, merge_dir_diff_to_entry, CDirEntryDiff, DiffType}, utility::collect_from_root};
 use crate::{save::{add_dir_diffs, diff_saves, get_hash_iteration_count_from_file_names, read_diff_file, read_save_file}, walk::{walk_until_end, CDirEntry}};
 
@@ -158,17 +158,11 @@ pub fn add_combined_diffs(diff_path: &std::path::PathBuf, diff_count: u16) -> st
 pub fn bubble_up_props(scan: &mut Vec<CDirEntry>, pm: &mut HashMap<std::path::PathBuf, usize>) {
     // Traverse scan in reverse to "bubble up" properties
     if scan.len() > 0 {
-        let cap_len_dirs = scan.capacity() as f64 / scan.len() as f64;
-        let cap_len_dirs_map = pm.capacity() as f64 / scan.len() as f64;
-        let pm_entry_size = mem::size_of_val(&pm.entry(scan[0].p.clone()));
         // let mut_dt = &mut curr_scan;
         for i in 0..scan.len() {
             // Calculate memory usage for self
             let curr_idx = scan.len() - 1 - i;
             let d = scan[curr_idx].clone();
-            
-            scan[curr_idx].memory_usage_here = (d.memory_usage_here as f64 * 1.1) as usize;
-            scan[curr_idx].memory_usage_below = (d.memory_usage_below as f64 * 1.1) as usize;
     
             if let Some(parent) = d.p.parent() {
                 if let Some(maybe_ent) = &pm.get(parent) {
@@ -178,9 +172,6 @@ pub fn bubble_up_props(scan: &mut Vec<CDirEntry>, pm: &mut HashMap<std::path::Pa
                     scan[*idx].dirs_below += d.dirs_here + d.dirs_below;
                     scan[*idx].files_below += d.files_here + d.files_below;
                     scan[*idx].size_below += d.size_here + d.size_below;
-    
-                    scan[*idx].memory_usage_here += (((size_of::<CDirEntry>() + size_of::<PathBuf>()) as f64) * cap_len_dirs) as usize + (pm_entry_size as f64 * cap_len_dirs_map) as usize + (3 * d.p.capacity()); // dir + v + pm
-                    scan[*idx].memory_usage_below += d.memory_usage_here + d.memory_usage_below;
                 }
             }
         }

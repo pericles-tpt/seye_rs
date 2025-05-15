@@ -6,7 +6,7 @@ This is my first rust project, so some of these goals are focused on allowing me
 - ~~Learn how to program effectively in Rust and understand the borrow checker~~
 - ~~Learn how to do **iterative** tree traversal~~
 - ~~Benchmark performance characteristics of iterative vs recursive tree traversal techniques~~ (skipped)
-- Implement memory limits for directory scans (down to a reasonable limit, probably 100M)
+- ~~Implement memory limits for directory scans (down to a reasonable limit, probably 100M)~~ (skipped)
 - ~~Implement multithreading for directory scans~~
 - Implement multithreading for diff combining
   - Example - 4 diffs, 1 additional threads:
@@ -59,6 +59,6 @@ seye_rs --help
 - Ability to specify a time range to compare scan diffs (e.g. 2 weeks ago until now)
 - Identify file renames (as another diff type like Modify, Remove and Add)
 - Add an option to compare files by hash instead of size difference, allowing changes to be identified even if the size and modified time haven't changed
-- Add an option to specify a memory usage limit (lower bound likely to be 100M, upper bound undecided)
+- ~~Add an option to specify a memory usage limit (lower bound likely to be 100M, upper bound undecided)~~ (skipped)
 - ~~Add an option to specify a number of threads to run the scan on~~
   - Currently planning to do READDIR syscalls on the main thread and delegate STAT calls to auxiliary threads  
