@@ -76,7 +76,7 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
         let mut diff_prefix = output_path.clone();
         diff_prefix.push("tmp");
         diff_prefix.set_file_name(format!("{}_diff", path_hash));
-        let res: Result<Vec<CDirEntryDiff>, Error> = add_combined_diffs(&diff_prefix, iteration_count as u16);
+        let res: Result<Vec<CDirEntryDiff>, Error> = add_combined_diffs(&diff_prefix, iteration_count as u16, None, None);
         match res {
             Ok(ds) => {
                 combined_diffs = ds;
@@ -122,7 +122,7 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
     Ok((num_scan_files, num_scan_dirs))
 }
 
-pub fn add_combined_diffs(diff_path: &std::path::PathBuf, diff_count: u16) -> std::io::Result<Vec<CDirEntryDiff>> {
+pub fn add_combined_diffs(diff_path: &std::path::PathBuf, diff_count: u16, maybe_start_diff_time: Option<SystemTime>, maybe_end_diff_time: Option<SystemTime>) -> std::io::Result<Vec<CDirEntryDiff>> {
     let combined_diffs = Vec::new();
     if diff_count == 0 {
         return Ok(combined_diffs);
@@ -139,16 +139,24 @@ pub fn add_combined_diffs(diff_path: &std::path::PathBuf, diff_count: u16) -> st
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "failed to get diff base name from `diff_path`"))
         }
     }
-    let mut first_diff_path = diff_path.clone();
-    first_diff_path.set_file_name(format!("{}_{}", base_file_name.to_str().unwrap(), 1));
-    let mut combined_diffs= read_diff_file(first_diff_path.clone())?;
     
     // Combine diffs
-    for i in 2..(diff_count + 1) {
+    let mut combined_diffs = vec![];
+    let is_diff_range_restricted = maybe_start_diff_time.is_some() || maybe_end_diff_time.is_some();
+    for i in 1..(diff_count + 1) {
         let mut curr_diff_path = diff_path.clone();
         curr_diff_path.set_file_name(format!("{}_{}", base_file_name.to_str().unwrap(), i));
+        
+        if is_diff_range_restricted {
+            let md = std::fs::metadata(&curr_diff_path)?;
+            let modified_at = md.modified()?;
+            let diff_in_time_range = (maybe_start_diff_time.is_none() || modified_at >= maybe_start_diff_time.unwrap()) && (maybe_end_diff_time.is_none() || modified_at <= maybe_end_diff_time.unwrap());
+            if !diff_in_time_range {
+                continue;
+            }
+        }
+        
         let next_diff = read_diff_file(curr_diff_path)?;
-
         combined_diffs = add_dir_diffs(combined_diffs, next_diff);
     }
 

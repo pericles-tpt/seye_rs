@@ -186,7 +186,7 @@ fn main() {
                 output_pb = su_path;
             }
             
-            let res = report::report_changes(target_pb, output_pb, cfg.move_depth_threshold, cfg.show_moved_files);
+            let res = report::report_changes(target_pb, output_pb, cfg);
             match res {
                 Ok(()) => {}
                 Err(e) => {
