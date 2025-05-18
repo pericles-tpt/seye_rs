@@ -296,14 +296,16 @@ mod tests {
                 }
 
                 // Scan before adding file
+                // TODO: Replace below hardcoded value
+                let is_initial_scan = true;
                 let mut pm: HashMap<std::path::PathBuf, usize> = HashMap::new();
-                let mut initial_scan = walk_until_end(new_file_path.clone(), &mut pm, &mut HashSet::new());
+                let mut initial_scan = walk_until_end(new_file_path.clone(), &mut pm, &mut HashSet::new(), is_initial_scan);
 
-                initial_scan.sort_by(|a, b| {
+                initial_scan.entries.sort_by(|a, b| {
                     return a.p.cmp(&b.p);
                 });
 
-                bubble_up_props(&mut initial_scan, &mut pm);
+                bubble_up_props(&mut initial_scan, &mut pm, is_initial_scan);
 
                 // Add file
                 let mf = File::create(new_file_path.clone());

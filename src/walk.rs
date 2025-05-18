@@ -2,6 +2,9 @@ use std::fs::metadata;
 use std::{ffi::OsString, fs::DirEntry, os::unix::fs::MetadataExt, time::SystemTime};
 use std::{collections::{HashMap, HashSet}, fs::{symlink_metadata, Metadata}, path::PathBuf, time::Duration};
 use serde::{Deserialize, Deserializer, Serialize};
+use chksum_md5 as md5;
+
+use crate::diff::CDirEntryDiff;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct FileEntry {
@@ -37,6 +40,19 @@ pub struct CDirEntry {
     pub symlinks: Box<[FileEntry]>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+pub struct FullScan {
+    pub entries: Vec<CDirEntry>,
+    pub hashes: Vec<Vec<String>>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DiffScan {
+    pub entries: Vec<CDirEntryDiff>,
+    // `DiffScan`s won't hash every entry, just the ones it suspects are moved
+    pub hashes: Vec<(usize, Vec<String>)>,
+}
+
 fn deserialize_boxed_slice<'de, D>(deserializer: D) -> Result<Box<[FileEntry]>, D::Error>
 where
     D: Deserializer<'de>,
@@ -47,8 +63,11 @@ where
     Ok(vec.into_boxed_slice())
 }
 
-pub fn walk_until_end(root: std::path::PathBuf, parent_map: &mut HashMap<std::path::PathBuf, usize>, skip_set: &mut HashSet<PathBuf>) -> std::vec::Vec<CDirEntry> {
-    let mut df: std::vec::Vec<CDirEntry> = Vec::new();
+pub fn walk_until_end(root: std::path::PathBuf, parent_map: &mut HashMap<std::path::PathBuf, usize>, skip_set: &mut HashSet<PathBuf>, is_initial_scan: bool) -> FullScan {
+    let mut ret = FullScan{
+        entries: Vec::new(),
+        hashes: Vec::new(),
+    };
     let mut v: Vec<std::path::PathBuf> = Vec::new();
 
     let mut total_time_stat = Duration::new(0, 0);
@@ -93,7 +112,13 @@ pub fn walk_until_end(root: std::path::PathBuf, parent_map: &mut HashMap<std::pa
             continue;
         }
         let md = maybe_md.unwrap();
-        let curr_idx = insert_dir_entry(&md, &mp, &mut df, parent_map);
+        let curr_idx = insert_dir_entry(&md, &mp, &mut ret.entries, parent_map);
+        if is_initial_scan {
+            ret.hashes.push(Vec::with_capacity(entries.len() + 1));
+            let last_idx = ret.hashes.len() - 1;
+            let dir_path = mp.clone().into_os_string().into_string().unwrap();
+            ret.hashes[last_idx].push(dir_path);
+        }
 
         let mut file_entries: Vec<FileEntry> = Vec::with_capacity(entries.len());
         let mut symlink_entries: Vec<FileEntry> = Vec::with_capacity(entries.len());
@@ -118,6 +143,9 @@ pub fn walk_until_end(root: std::path::PathBuf, parent_map: &mut HashMap<std::pa
 
             if ft.is_dir() {
                 let _ = v.push(p.to_path_buf());
+                if is_initial_scan {
+                    ret.hashes[curr_idx].push(format!("/{}", basename.to_str().unwrap()));
+                }
                 continue 
             }
 
@@ -133,23 +161,40 @@ pub fn walk_until_end(root: std::path::PathBuf, parent_map: &mut HashMap<std::pa
             let fmd = maybe_fmd.unwrap();
 
             let basename_string = basename.to_os_string();
+            
+            if is_initial_scan {
+                // Read / Hash the file
+                let mut hash_string: String = String::from("");
+                let file = std::fs::File::open(val.path());
+                if file.is_ok() {
+                    let digest = md5::chksum(file.unwrap());
+                    if digest.is_ok() {
+                        hash_string = digest.unwrap().to_hex_lowercase();
+                    }
+                }
+
+                // Store the hash in the vector
+                ret.hashes[curr_idx].push(hash_string);
+            }
+            
             if fmd.is_symlink() {
                 insert_file_entry(&fmd, basename_string, &mut symlink_entries);
             } else {
                 insert_file_entry(&fmd, basename_string, &mut file_entries);
             }
 
-            df[curr_idx].files_here += 1;
-            df[curr_idx].size_here += fmd.size() as i64;
-        }        
-        df[curr_idx].symlinks = symlink_entries.into_boxed_slice();
-        df[curr_idx].files = file_entries.into_boxed_slice();
+            ret.entries[curr_idx].files_here += 1;
+            ret.entries[curr_idx].size_here += fmd.size() as i64;
+        }
+
+        ret.entries[curr_idx].symlinks = symlink_entries.into_boxed_slice();
+        ret.entries[curr_idx].files = file_entries.into_boxed_slice();
     }
     
-    return df;
+    return ret;
 }
 
-pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, _skip_set: &HashSet<PathBuf>, other_entries: &mut Vec<CDirEntry>, thread_readdir_limit: usize) -> std::io::Result<Vec<PathBuf>> {
+pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, _skip_set: &HashSet<PathBuf>, other_entries: &mut Vec<CDirEntry>, other_hashes: &mut Vec<Vec<String>>, thread_readdir_limit: usize, is_initial_scan: bool) -> std::io::Result<Vec<PathBuf>> {
     let mut d_idx = 0;
     let mut f_idx = 0;
     
@@ -175,6 +220,13 @@ pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, _skip_set: &
         let md = maybe_md.unwrap();
 
         let curr_idx = insert_dir_entry(&md, &dir_q[d_idx], other_entries, &mut pm);
+        if is_initial_scan {
+            other_hashes.push(Vec::with_capacity(other_entries.len() + 1));
+            let last_idx = other_hashes.len() - 1;
+            let dir_path = dir_q[d_idx].clone().into_os_string().into_string().unwrap();
+            other_hashes[last_idx].push(dir_path);
+        }
+
         let entries: Vec<Result<DirEntry, std::io::Error>> = rd.unwrap().collect();
         let mut file_entries: Vec<FileEntry> = Vec::with_capacity(entries.len());
         let mut symlink_entries: Vec<FileEntry> = Vec::with_capacity(entries.len());
@@ -189,14 +241,39 @@ pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, _skip_set: &
             // if IGNORE_LIST.contains(filename.as_os_str()) {
             //     continue 
             // }
+            let filename = val.file_name();
                 
             if ft.is_dir() {
                 dir_q.push(val.path());
+                if is_initial_scan {
+                    other_hashes[curr_idx].push(format!("/{}", filename.to_str().unwrap()));
+                }
+                continue;
+            } else if !(ft.is_file() || ft.is_symlink()) {
                 continue;
             }
 
             let Ok(fmd) = metadata(val.path()) else {continue};    
                 
+            if is_initial_scan {
+                // Read / Hash the file
+                let mut hash_string: String = String::from("F");
+                if ft.is_file() {
+                    let file = std::fs::File::open(val.path());
+                    if file.is_ok() {
+                        let digest = md5::chksum(file.unwrap());
+                        if digest.is_ok() {
+                            hash_string = digest.unwrap().to_hex_lowercase();
+                        }
+                    }
+                } else if ft.is_symlink() {
+                    hash_string = String::from("S");
+                }
+
+                // Store the hash in the vector
+                other_hashes[curr_idx].push(hash_string);
+            }
+
             f_idx += 1;
             let filename = val.file_name();
             if fmd.is_symlink() {
@@ -271,16 +348,16 @@ mod tests {
         match path {
             Ok(p) => {
                 let mut pm = HashMap::new();
-                let res = walk_until_end(p.to_path_buf(), &mut pm, &mut HashSet::new());
-                assert_eq!(res.len(), 1);
+                let res = walk_until_end(p.to_path_buf(), &mut pm, &mut HashSet::new(), true);
+                assert_eq!(res.entries.len(), 1);
 
-                assert_eq!(res[0].p, p);
-                assert_eq!(res[0].files_here, 1);
-                assert_eq!(res[0].files_below, 0);
-                assert_eq!(res[0].dirs_here, 0);
-                assert_eq!(res[0].dirs_below, 0);
-                assert_eq!(res[0].size_here, 4);
-                assert_eq!(res[0].size_below, 0);
+                assert_eq!(res.entries[0].p, p);
+                assert_eq!(res.entries[0].files_here, 1);
+                assert_eq!(res.entries[0].files_below, 0);
+                assert_eq!(res.entries[0].dirs_here, 0);
+                assert_eq!(res.entries[0].dirs_below, 0);
+                assert_eq!(res.entries[0].size_here, 4);
+                assert_eq!(res.entries[0].size_below, 0);
             }
             Err(e) => {
                 panic!("failed to get path buf: {}", e)
@@ -296,25 +373,25 @@ mod tests {
         match path {
             Ok(p) => {
                 let mut pm = HashMap::new();
-                let res = walk_until_end(p.to_path_buf(), &mut pm,&mut HashSet::new());
-                assert_eq!(res.len(), 2);
+                let res = walk_until_end(p.to_path_buf(), &mut pm,&mut HashSet::new(), true);
+                assert_eq!(res.entries.len(), 2);
 
-                assert_eq!(res[0].p, p);
-                assert_eq!(res[0].files_here, 0);
-                assert_eq!(res[0].files_below, 0);
-                assert_eq!(res[0].dirs_here, 1);
-                assert_eq!(res[0].dirs_below, 0);
-                assert_eq!(res[0].size_here, 0);
-                assert_eq!(res[0].size_below, 0);
+                assert_eq!(res.entries[0].p, p);
+                assert_eq!(res.entries[0].files_here, 0);
+                assert_eq!(res.entries[0].files_below, 0);
+                assert_eq!(res.entries[0].dirs_here, 1);
+                assert_eq!(res.entries[0].dirs_below, 0);
+                assert_eq!(res.entries[0].size_here, 0);
+                assert_eq!(res.entries[0].size_below, 0);
                 
                 let fp = p.join("./d");
-                assert_eq!(res[1].p, fp);
-                assert_eq!(res[1].files_here, 0);
-                assert_eq!(res[1].files_below, 0);
-                assert_eq!(res[1].dirs_here, 0);
-                assert_eq!(res[1].dirs_below, 0);
-                assert_eq!(res[1].size_here, 0);
-                assert_eq!(res[1].size_below, 0);
+                assert_eq!(res.entries[1].p, fp);
+                assert_eq!(res.entries[1].files_here, 0);
+                assert_eq!(res.entries[1].files_below, 0);
+                assert_eq!(res.entries[1].dirs_here, 0);
+                assert_eq!(res.entries[1].dirs_below, 0);
+                assert_eq!(res.entries[1].size_here, 0);
+                assert_eq!(res.entries[1].size_below, 0);
             }
             Err(e) => {
                 panic!("failed to get path buf: {}", e)
@@ -330,16 +407,16 @@ mod tests {
         match path {
             Ok(p) => {
                 let mut pm = HashMap::new();
-                let res = walk_until_end(p.to_path_buf(), &mut pm, &mut HashSet::new());
-                assert_eq!(res.len(), 3);
+                let res = walk_until_end(p.to_path_buf(), &mut pm, &mut HashSet::new(), true);
+                assert_eq!(res.entries.len(), 3);
 
-                assert_eq!(res[0].p, p);
-                assert_eq!(res[0].files_here, 1);
-                assert_eq!(res[0].files_below, 1);
-                assert_eq!(res[0].dirs_here, 1);
-                assert_eq!(res[0].dirs_below, 1);
-                assert_eq!(res[0].size_here, 0);
-                assert_eq!(res[0].size_below, 3);
+                assert_eq!(res.entries[0].p, p);
+                assert_eq!(res.entries[0].files_here, 1);
+                assert_eq!(res.entries[0].files_below, 1);
+                assert_eq!(res.entries[0].dirs_here, 1);
+                assert_eq!(res.entries[0].dirs_below, 1);
+                assert_eq!(res.entries[0].size_here, 0);
+                assert_eq!(res.entries[0].size_below, 3);
             }
             Err(e) => {
                 panic!("failed to get path buf: {}", e)
@@ -355,16 +432,16 @@ mod tests {
         match path {
             Ok(p) => {
                 let mut pm = HashMap::new();
-                let res = walk_until_end(p.to_path_buf(), &mut pm,&mut HashSet::new());
-                assert_eq!(res.len(), 8);
+                let res = walk_until_end(p.to_path_buf(), &mut pm,&mut HashSet::new(), true);
+                assert_eq!(res.entries.len(), 8);
 
-                assert_eq!(res[0].p, p);
-                assert_eq!(res[0].files_here, 1);
-                assert_eq!(res[0].files_below, 4);
-                assert_eq!(res[0].dirs_here, 3);
-                assert_eq!(res[0].dirs_below, 4);
-                assert_eq!(res[0].size_here, 12);
-                assert_eq!(res[0].size_below, 8);
+                assert_eq!(res.entries[0].p, p);
+                assert_eq!(res.entries[0].files_here, 1);
+                assert_eq!(res.entries[0].files_below, 4);
+                assert_eq!(res.entries[0].dirs_here, 3);
+                assert_eq!(res.entries[0].dirs_below, 4);
+                assert_eq!(res.entries[0].size_here, 12);
+                assert_eq!(res.entries[0].size_below, 8);
             }
             Err(e) => {
                 panic!("failed to get path buf: {}", e)

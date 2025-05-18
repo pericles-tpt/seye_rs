@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, collections::HashMap, ffi::OsString, fs::{DirEntry, File}, hash::{DefaultHasher, Hasher}, io::BufReader, os::unix::ffi::OsStrExt, path::PathBuf, time::{SystemTime, UNIX_EPOCH}, usize};
 use std::io;
-use crate::{diff::{CDirEntryDiff, DiffType, FileEntryDiff, TDiff}, walk::{CDirEntry, FileEntry}};
+use crate::{diff::{CDirEntryDiff, DiffType, FileEntryDiff, TDiff}, walk::{CDirEntry, FileEntry, DiffScan}};
 
 const _START_VECTOR_BYTES: u64 = 8;
 
@@ -93,10 +93,13 @@ pub fn read_diff_file(file_path: PathBuf) -> io::Result<Vec<CDirEntryDiff>> {
     }
 }
 
-pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, min_diff_bytes: usize) -> std::vec::Vec<CDirEntryDiff> {
-    let mut diffs: Vec<CDirEntryDiff> = Vec::new();
+pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, min_diff_bytes: usize) -> DiffScan {
+    let mut ret = DiffScan {
+        entries: Vec::new(),
+        hashes: Vec::new(),
+    };
     if o.len() == 0 && n.len() == 0 {
-        return diffs;
+        return ret;
     }
 
     let mut oi = 0;
@@ -141,7 +144,7 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, min_diff_bytes: usize) -
                 // diff_passes_threshold = new.size_here + new.size_below >= min_diff_bytes as i64;
                 diff_passes_threshold = new.size_here >= min_diff_bytes as i64;
                 if diff_passes_threshold {
-                    diffs.push(CDirEntryDiff{
+                    ret.entries.push(CDirEntryDiff{
                         diff_type: DiffType::Add,
                         
                         p: new.p.clone(),
@@ -163,7 +166,7 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, min_diff_bytes: usize) -
                 // diff_passes_threshold = old.size_here + old.size_below >= min_diff_bytes as i64;
                 diff_passes_threshold = old.size_here >= min_diff_bytes as i64;
                 if diff_passes_threshold {
-                    diffs.push(CDirEntryDiff{
+                    ret.entries.push(CDirEntryDiff{
                         diff_type: DiffType::Remove,
                         
                         p: old.p.clone(),
@@ -187,7 +190,7 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, min_diff_bytes: usize) -
                     Some(d) => {
                         diff_passes_threshold = d.size_here.abs() >= min_diff_bytes as i64;
                         if diff_passes_threshold {
-                            diffs.push(d);
+                            ret.entries.push(d);
                         }
                     },
                     None => {}
@@ -200,7 +203,9 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, min_diff_bytes: usize) -
         ni += 1;
     }
 
-    return diffs;
+    // TODO: use ret.hashes to check if files are MOVED or not
+
+    return ret;
 }
 
 fn get_maybe_modified_dir_diff(ent_o: CDirEntry, ent_n: CDirEntry) -> Option<CDirEntryDiff> {    

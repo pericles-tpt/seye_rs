@@ -1,6 +1,6 @@
 use std::{collections::HashSet, path::PathBuf};
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
-use crate::walk::{walk_collect_until_limit, CDirEntry};
+use crate::walk::{walk_collect_until_limit, CDirEntry, FullScan};
 
 pub const KILOBYTE: usize = 1024;
 pub const MEGABYTE: usize = 1024 * KILOBYTE;
@@ -74,12 +74,16 @@ pub fn collect_from_root(
     skip_set: HashSet<PathBuf>,
     num_threads: usize, 
     num_thread_iterations_before_yield: usize,
-) -> std::io::Result<Vec<CDirEntry>> {
-    let mut res: Vec<CDirEntry> = Vec::new();
+    is_initial_scan: bool,
+) -> std::io::Result<FullScan> {
+    let mut res = FullScan{
+        entries: Vec::new(),
+        hashes: Vec::new(),
+     };
 
     // Do first pass of thread_*_fn() on root to get multiple items
     let mut initial_dirs = vec![root];
-    let maybe_initial_paths: std::io::Result<Vec<PathBuf>> = walk_collect_until_limit(&mut initial_dirs, &skip_set, &mut res, num_thread_iterations_before_yield);
+    let maybe_initial_paths: std::io::Result<Vec<PathBuf>> = walk_collect_until_limit(&mut initial_dirs, &skip_set, &mut res.entries, &mut res.hashes, num_thread_iterations_before_yield, is_initial_scan);
     let Ok(mut paths_to_distribute) = maybe_initial_paths else {
         return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to read root path: {:?}", maybe_initial_paths.err())))
     };
@@ -94,18 +98,24 @@ pub fn collect_from_root(
         let mut paths_per_thread = distribute_paths_per_thread(&mut paths_to_distribute, curr_num_threads);
 
         // Start "walk" on auxiliary threads
-        let new_dirs_and_results: (Vec<Vec<PathBuf>>, Vec<Vec<CDirEntry>>) = paths_per_thread.par_iter_mut().map(|p| {
-            let mut new_entries = vec![];
-            let Ok(leftover_paths) = walk_collect_until_limit(p, &skip_set, &mut new_entries, num_thread_iterations_before_yield)
+        let new_dirs_and_results: Vec<(Vec<PathBuf>, Vec<CDirEntry>, Vec<Vec<String>>)> = paths_per_thread.par_iter_mut().map(|p| {
+            let mut entries=  vec![];
+            let mut hashes= vec![];
+            let Ok(leftover_paths) = walk_collect_until_limit(p, &skip_set, &mut entries, &mut hashes, num_thread_iterations_before_yield, is_initial_scan)
             else {
-                return (vec![], vec![]);
+                return (vec![], vec![], vec![]);
             };
-            return (leftover_paths, new_entries);
-        }).unzip();
+            return (leftover_paths, entries, hashes);
+        }).collect();
 
-        // Retrieve paths to distribute and add to all_results    
-        paths_to_distribute = new_dirs_and_results.0.into_iter().flatten().collect();
-        res.append(&mut new_dirs_and_results.1.into_iter().flatten().collect());
+        paths_to_distribute.clear();
+        for mut trip in new_dirs_and_results {
+            // Retrieve paths to distribute and add to all_results    
+            paths_to_distribute.append(&mut trip.0);
+            res.entries.append(&mut trip.1);
+            res.hashes.append(&mut trip.2);
+        }
+
         if paths_to_distribute.len() == 0 {
             break;
         }
