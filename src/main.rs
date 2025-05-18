@@ -10,6 +10,8 @@ extern crate libc;
 use std::num::ParseIntError;
 use std::path::PathBuf;
 use std::env;
+use std::string::ParseError;
+use std::time::SystemTime;
 
 const DEFAULT_NUM_THREADS: usize    = 84;
 const DEFAULT_FD_LIMIT: usize       = 2048;
@@ -24,18 +26,22 @@ struct Config {
     // sorted: bool,
     move_depth_threshold: i32,
     show_moved_files: bool,
+    maybe_start_report_time: Option<SystemTime>,
+    maybe_end_report_time: Option<SystemTime>
 }
 
 fn main() {
     let mut cfg = Config {
-        num_threads:          DEFAULT_NUM_THREADS,
-        file_dir_limit:       DEFAULT_FD_LIMIT,
-        min_diff_bytes:       DEFAULT_MIN_DIFF_BYTES,
+        num_threads:             DEFAULT_NUM_THREADS,
+        file_dir_limit:          DEFAULT_FD_LIMIT,
+        min_diff_bytes:          DEFAULT_MIN_DIFF_BYTES,
         // scan_hidden:          true,
-        show_perf_info:       false,
+        show_perf_info:          false,
         // sorted:               false,
-        move_depth_threshold: 0,
-        show_moved_files:     false,
+        move_depth_threshold:    0,
+        show_moved_files:        false,
+        maybe_start_report_time: None,
+        maybe_end_report_time:   None,
     };
 
     let args: Vec<String> = env::args().collect();
@@ -209,7 +215,8 @@ fn validate_get_pathbuf(p: &String) -> std::io::Result<PathBuf> {
 
 fn eval_optional_args(cmd: &str, args: Vec<&&String>, cfg: &mut Config) -> std::io::Result<()> {    
     let mut i = 0;
-    let valid_command_options = vec!["-p", "-md", "-t", "-fdl", "-mvd", "-mvs"];
+    let valid_command_options = vec!["-p", "-md", "-t", "-fdl", "-mvd", "-mvs", "--start-report", "--end-report"];
+    let local_tz_offset_secs = chrono::Local::now().offset().local_minus_utc();
     while i < args.len() {
         let before_directory_args = i < args.len() - 2;
         let a = args[i].as_str();
@@ -298,6 +305,28 @@ fn eval_optional_args(cmd: &str, args: Vec<&&String>, cfg: &mut Config) -> std::
                         }
                         cfg.move_depth_threshold = maybe_move_depth_threshold.unwrap();
                     }
+                    "--start-report" => {
+                        let maybe_start_report: Result<String, ParseError> = args[i].parse();
+                        if maybe_start_report.is_err() {
+                            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid start report argument, must be an ISO 8601 datetime without timezone"));
+                        }
+                        let maybe_datetime = utility::datetime_from_iso8601_without_tz(maybe_start_report.unwrap().as_str(), local_tz_offset_secs);
+                        if maybe_datetime.is_err() {
+                            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid start report argument, must be an ISO 8601 datetime without timezone"));
+                        }
+                        cfg.maybe_start_report_time = Some(SystemTime::from(maybe_datetime.unwrap()));
+                    }
+                    "--end-report" => {
+                        let maybe_end_report: Result<String, ParseError> = args[i].parse();                    
+                        if maybe_end_report.is_err() {
+                            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid end report argument, must be an ISO 8601 datetime without timezone"));
+                        }
+                        let maybe_datetime = utility::datetime_from_iso8601_without_tz(maybe_end_report.unwrap().as_str(), local_tz_offset_secs);
+                        if maybe_datetime.is_err() {
+                            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid end report argument, must be an ISO 8601 datetime without timezone"));
+                        }
+                        cfg.maybe_end_report_time = Some(SystemTime::from(maybe_datetime.unwrap()));
+                    }
                     _ => {
                         if before_directory_args {
                             return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("unimplemented parameter: {}, for command: {}", a, cmd)));
@@ -338,6 +367,9 @@ Report Arguments:
                                                  a: /jumps/over/the/lazy/dog.txt, b: /jumps/under/the/lazy/dog.txt
 
     -mvs                                    Show moved files in the report output (even though the size of a MOVE is 0B)
+
+    --start-report        (default: first)  Specifies the earliest diff that will be included in the report (format: 2025-05-05T10:00:00, uses system timezone)
+    --end-report          (default:  last)  Specifies the latest diff that will be included in the report (format: 2025-05-05T10:00:00, uses system timezone)
 ", 
     DEFAULT_NUM_THREADS, DEFAULT_FD_LIMIT);
 }

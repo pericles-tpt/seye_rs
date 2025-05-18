@@ -1,4 +1,5 @@
 use std::{collections::HashSet, path::PathBuf};
+use chrono;
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use crate::walk::{walk_collect_until_limit, CDirEntry};
 
@@ -133,4 +134,22 @@ fn distribute_paths_per_thread(paths_to_distribute_and_free: &mut Vec<PathBuf>, 
     paths_to_distribute_and_free.shrink_to_fit();
 
     return paths_per_thread;
+}
+
+pub fn datetime_from_iso8601_without_tz(datetime_string: &str, tz_offset_secs: i32) -> chrono::ParseResult<chrono::DateTime<chrono::FixedOffset>> {
+    let maybe_datetime_string = format!("{}{}", datetime_string, tz_secs_to_tz_str(tz_offset_secs));
+    return chrono::DateTime::parse_from_rfc3339(&maybe_datetime_string);
+}
+
+fn tz_secs_to_tz_str(tz_secs: i32) -> String {
+    let mut sign = "+";
+    let mut total_mins = tz_secs / 60;
+    if tz_secs < 0 {
+        sign = "-";
+        total_mins *= -1;
+    }
+
+    let mins  = total_mins % 60;
+    let hours = (total_mins - mins) / 60;
+    return format!("{}{:02}:{:02}", sign, hours, mins)
 }
