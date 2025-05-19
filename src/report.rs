@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, io::Error, path::PathBuf};
 
-use crate::{diff::{CDirEntryDiff, DiffType}, save::get_hash_iteration_count_from_file_names, scan::add_combined_diffs, utility::get_shorthand_file_size};
+use crate::{diff::{CDirEntryDiff, DiffType}, save::get_hash_iteration_count_from_file_names, scan::add_combined_diffs, utility::get_shorthand_file_size, walk::DiffScan};
 
 pub fn report_changes(target_path: PathBuf, output_path: PathBuf, merge_nesting_diff: i32, show_moved_files: bool) -> std::io::Result<()> {
     let save_file_data = get_hash_iteration_count_from_file_names(&target_path, output_path.to_path_buf());
@@ -14,12 +14,12 @@ pub fn report_changes(target_path: PathBuf, output_path: PathBuf, merge_nesting_
         return Err(std::io::Error::new(std::io::ErrorKind::Other, "No diffs to report on yet, run a scan first"))
     }
 
-    let mut combined_diffs: Vec<CDirEntryDiff> = Vec::new();
+    let mut combined_diffs: DiffScan = DiffScan { entries: vec![], hashes: vec![] };
     if iteration_count > -1 {
         let mut diff_prefix = output_path.clone();
         diff_prefix.push("tmp");
         diff_prefix.set_file_name(format!("{}_diff", path_hash));
-        let res: Result<Vec<CDirEntryDiff>, Error> = add_combined_diffs(&diff_prefix, iteration_count as u16);
+        let res: Result<DiffScan, Error> = add_combined_diffs(&diff_prefix, iteration_count as u16);
         match res {
             Ok(ds) => {
                 combined_diffs = ds;
@@ -29,6 +29,7 @@ pub fn report_changes(target_path: PathBuf, output_path: PathBuf, merge_nesting_
     }
 
     // Sort by ABSOLUTE size, if any INCREASES exactly match DECREASES, then it's probably moved
+    // TODO: Should also sort hashes by below BUT there won't be the same number of hashes as CDirEntry... so how?
     combined_diffs.sort_by(|a, b| {
         if (a.size_here + a.size_below).abs() <= (b.size_here + b.size_below).abs() {
             return Ordering::Greater

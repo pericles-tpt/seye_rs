@@ -1,6 +1,6 @@
-use std::{cmp::Ordering, collections::HashMap, ffi::OsString, fs::{DirEntry, File}, hash::{DefaultHasher, Hasher}, io::BufReader, os::unix::ffi::OsStrExt, path::PathBuf, time::{SystemTime, UNIX_EPOCH}, usize};
+use std::{cmp::Ordering, collections::{HashMap, HashSet}, ffi::OsString, fs::{DirEntry, File}, hash::{DefaultHasher, Hasher}, io::BufReader, os::unix::ffi::OsStrExt, path::PathBuf, time::{SystemTime, UNIX_EPOCH}, usize};
 use std::io;
-use crate::{diff::{CDirEntryDiff, DiffType, FileEntryDiff, TDiff}, walk::{CDirEntry, FileEntry, DiffScan}};
+use crate::{diff::{CDirEntryDiff, DiffType, FileEntryDiff, TDiff}, walk::{CDirEntry, DiffScan, FileEntry, FullScan}};
 
 const _START_VECTOR_BYTES: u64 = 8;
 
@@ -69,10 +69,10 @@ fn get_iteration_count_from_entry(root_hash_underscore: &String, e: Result<DirEn
     return ret;
 }
 
-pub fn read_save_file(file_path: PathBuf) -> io::Result<Vec<CDirEntry>> {
+pub fn read_save_file(file_path: PathBuf) -> io::Result<FullScan> {
     let fp = File::open(&file_path)?;
     let reader = BufReader::new(fp);
-    let res: Result<Vec<CDirEntry>, _> = bincode::deserialize_from(reader);
+    let res: Result<FullScan, _> = bincode::deserialize_from(reader);
 
     // Handle the deserialization error
     match res {
@@ -81,10 +81,10 @@ pub fn read_save_file(file_path: PathBuf) -> io::Result<Vec<CDirEntry>> {
     }
 }
 
-pub fn read_diff_file(file_path: PathBuf) -> io::Result<Vec<CDirEntryDiff>> {
+pub fn read_diff_file(file_path: PathBuf) -> io::Result<DiffScan> {
     let fp = File::open(&file_path)?;
     let reader = BufReader::new(fp);
-    let res: Result<Vec<CDirEntryDiff>, _> = bincode::deserialize_from(reader);
+    let res: Result<DiffScan, _> = bincode::deserialize_from(reader);
 
     // Handle the deserialization error
     match res {
@@ -348,16 +348,16 @@ fn get_file_diffs(o: Vec<FileEntry>, n: Vec<FileEntry>) -> Box<[FileEntryDiff]> 
     return diffs.into_boxed_slice();
 }
 
-pub fn add_dir_diffs(old: Vec<CDirEntryDiff>, new: Vec<CDirEntryDiff>) -> Vec<CDirEntryDiff> {
-    let mut ret: Vec<CDirEntryDiff>;
+pub fn add_dir_diffs(old: DiffScan, new: DiffScan) -> DiffScan {
+    let mut ret = DiffScan { entries: vec![], hashes: vec![] };
     
-    let mut is_new_arr = vec![false; old.len()];
-    is_new_arr.extend(vec![true; new.len()]);
+    let mut is_new_arr = vec![false; old.entries.len()];
+    is_new_arr.extend(vec![true; new.entries.len()]);
     
-    ret = old;
-    ret.extend(new);
-
-    let mut idx_keys: Vec<(usize, CDirEntryDiff)> = ret.into_iter().enumerate().collect();
+    ret.entries = old.entries;
+    ret.entries.extend(new.entries);
+    
+    let mut idx_keys: Vec<(usize, CDirEntryDiff, )> = ret.entries.into_iter().enumerate().collect();
     idx_keys.sort_by(|a, b| {
         let path_cmp = a.1.p.cmp(&b.1.p);
         if path_cmp == Ordering::Equal {
@@ -369,14 +369,31 @@ pub fn add_dir_diffs(old: Vec<CDirEntryDiff>, new: Vec<CDirEntryDiff>) -> Vec<CD
         }
         return path_cmp;
     });
-
-    ret = idx_keys.iter().map(|(_, entry)| entry.to_owned() ).collect();
-    let new_len = merge_sorted_vec_duplicates::<CDirEntryDiff>(&mut ret, |a: &CDirEntryDiff, b: &CDirEntryDiff| {
+    
+    ret.entries = idx_keys.iter().map(|(_, entry)| entry.to_owned() ).collect();
+    let new_len = merge_sorted_vec_duplicates::<CDirEntryDiff>(&mut ret.entries, |a: &CDirEntryDiff, b: &CDirEntryDiff| {
         return a.p == b.p;
     }, merge_dir_diff);
-    if ret.len() > 0 {
-        ret.resize(new_len, ret[0].clone());
+    if ret.entries.len() > 0 {
+        ret.entries.resize(new_len, ret.entries[0].clone());
     }
+
+    // `hashes` remove duplicates from earlier in the array
+    let mut combined_hashes = new.hashes.clone();
+    let mut hs = HashSet::new();
+    for h in new.hashes {
+        hs.insert(h.0);
+    }
+    for h in old.hashes {
+        if !hs.contains(&h.0) {
+            combined_hashes.push(h);
+        }
+    }
+    combined_hashes.sort_by(|a, b| {
+        return a.0.cmp(&b.0);
+    });
+    ret.hashes = combined_hashes;
+    
 
     return ret;
 }
