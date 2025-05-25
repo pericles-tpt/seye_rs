@@ -7,7 +7,6 @@ pub enum DiffType {
     Add,
     Remove,
     Modify,
-    Move,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

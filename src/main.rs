@@ -15,8 +15,6 @@ const DEFAULT_NUM_THREADS: usize    = 84;
 const DEFAULT_FD_LIMIT: usize       = 384; // Was 2048, which performs better when NOT hashing
 const DEFAULT_MIN_DIFF_BYTES: usize = 50 * utility::MEGABYTE;
 
-// TODO: Add `-mvs` (move_show) flag, that shows Move'd items (that normally wouldn't be shown since a `Move` is a 0B diff)
-//       set the default to `false`
 struct Config {
     num_threads: usize,
     file_dir_limit: usize,
