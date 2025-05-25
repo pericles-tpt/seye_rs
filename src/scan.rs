@@ -127,12 +127,8 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
 }
 
 pub fn add_combined_diffs(diff_path: &std::path::PathBuf, diff_count: u16) -> std::io::Result<DiffScan> {
-    let ret = DiffScan{
-        entries: vec![],
-        hashes: vec![],
-    };
     if diff_count == 0 {
-        return Ok(ret);
+        return Ok(DiffScan{entries: vec![], hashes: vec![]});
     }
     
     // Read initial diff
@@ -158,8 +154,7 @@ pub fn add_combined_diffs(diff_path: &std::path::PathBuf, diff_count: u16) -> st
 
         combined_diffs = add_dir_diffs(combined_diffs, next_diff);
     }
-
-    return Ok(ret);
+    return Ok(combined_diffs);
 }
 
 pub fn bubble_up_props(scan: &mut FullScan, pm: &mut HashMap<std::path::PathBuf, usize>, is_initial_scan: bool) {
