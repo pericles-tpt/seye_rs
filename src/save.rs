@@ -193,7 +193,7 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, min_diff_bytes: usize) -
                     None => {}
                 }
             },
-            DiffType::Move => { /* Should never be triggered here */ }
+            DiffType::MoveDir => { /* Should never be triggered here */ }
         }
 
         oi += 1;

@@ -3,6 +3,8 @@ use std::{ffi::OsString, fs::DirEntry, os::unix::fs::MetadataExt, time::SystemTi
 use std::{collections::{HashMap, HashSet}, fs::{symlink_metadata, Metadata}, path::PathBuf, time::Duration};
 use serde::{Deserialize, Deserializer, Serialize};
 
+use crate::utility::get_md5_of_struct;
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct FileEntry {
     pub sz: u64,
@@ -30,6 +32,7 @@ pub struct CDirEntry {
     
     pub p: PathBuf,
     pub md: Option<SystemTime>,
+    pub md5: [u8; 16],
 
     #[serde(deserialize_with = "deserialize_boxed_slice")]
     pub files: Box<[FileEntry]>,
@@ -144,6 +147,8 @@ pub fn walk_until_end(root: std::path::PathBuf, parent_map: &mut HashMap<std::pa
         }        
         df[curr_idx].symlinks = symlink_entries.into_boxed_slice();
         df[curr_idx].files = file_entries.into_boxed_slice();
+
+        df[curr_idx].md5 = get_md5_of_struct(&df[curr_idx]);
     }
     
     return df;
@@ -211,6 +216,8 @@ pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, _skip_set: &
         other_entries[curr_idx].symlinks = symlink_entries.into_boxed_slice();
         other_entries[curr_idx].files = file_entries.into_boxed_slice();
 
+        other_entries[curr_idx].md5 = get_md5_of_struct(&other_entries[curr_idx]);
+
         d_idx += 1;
     }
 
@@ -247,6 +254,7 @@ fn insert_dir_entry(md: &Metadata, p: &PathBuf, all_dirs: &mut Vec<CDirEntry>, p
         dirs_below: 0,
         size_here: 0,
         size_below: 0,
+        md5: [0; 16],
 
         files: Box::new([FileEntry::default()]),
         symlinks: Box::new([FileEntry::default()]),

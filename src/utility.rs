@@ -1,7 +1,9 @@
 use std::{collections::HashSet, path::PathBuf};
 use chrono;
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+use serde::Serialize;
 use crate::walk::{walk_collect_until_limit, CDirEntry};
+use chksum_md5 as md5;
 
 pub const KILOBYTE: usize = 1024;
 pub const MEGABYTE: usize = 1024 * KILOBYTE;
@@ -152,4 +154,21 @@ fn tz_secs_to_tz_str(tz_secs: i32) -> String {
     let mins  = total_mins % 60;
     let hours = (total_mins - mins) / 60;
     return format!("{}{:02}:{:02}", sign, hours, mins)
+}
+
+pub fn get_md5_of_struct<T: Serialize>(inp: &T) -> [u8; 16] {
+    let mut ret: [u8; 16] = [0; 16];
+    
+    let res = bincode::serialize(&inp);
+    if res.is_err() {
+        return ret;
+    }
+
+    let digest = md5::chksum(res.unwrap());
+    if digest.is_err() {
+        return ret;
+    }
+    
+    ret = digest.unwrap().into_inner();
+    return ret;
 }

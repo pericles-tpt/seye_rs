@@ -1,13 +1,14 @@
 use std::{cmp::Ordering, ffi::OsString, path::PathBuf, time::{Duration, SystemTime}};
 use serde::{Deserialize, Deserializer, Serialize};
-use crate::walk::{CDirEntry, FileEntry};
+use crate::{utility::get_md5_of_struct, walk::{CDirEntry, FileEntry}};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum DiffType {
     Add,
     Remove,
     Modify,
-    Move,
+    MoveDir,
+    // TODO: Create `MoveFile` and corresponding `md5` property on `FileEntry` 
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -199,7 +200,7 @@ pub fn merge_file_diff_to_entry(ent: &mut FileEntry, d: FileEntryDiff) {
 }
 
 pub fn get_entry_from_dir_diff(d: CDirEntryDiff) -> CDirEntry {
-    return CDirEntry {
+    let mut ret = CDirEntry {
         p: d.p,
         md: t_diff_to_system_time(d.t_diff, None),
         files_here: d.files_here,
@@ -208,9 +209,13 @@ pub fn get_entry_from_dir_diff(d: CDirEntryDiff) -> CDirEntry {
         dirs_below: d.dirs_below,
         size_here: d.size_here,
         size_below: d.size_below,
+        md5: [0; 16],
         files: get_f_entries_from_f_diffs(d.files),
         symlinks: get_f_entries_from_f_diffs(d.symlinks),
-    }
+    };
+    ret.md5 = get_md5_of_struct(&ret);
+    
+    return ret;
 }
 
 pub fn get_entry_from_file_diff(d: FileEntryDiff) -> FileEntry {

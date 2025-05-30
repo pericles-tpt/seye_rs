@@ -81,7 +81,7 @@ pub fn report_changes(target_path: PathBuf, output_path: PathBuf, cfg: Config) -
                             size_here: 0,
                             size_below: 0,
                             
-                            diff_type: diff::DiffType::Move,
+                            diff_type: diff::DiffType::MoveDir,
                             files: add.files,
                             symlinks: add.symlinks,
                         });
@@ -110,7 +110,7 @@ pub fn report_changes(target_path: PathBuf, output_path: PathBuf, cfg: Config) -
     for i in 0..limit {
         let mut t = format!("{:?}",combined_diffs[i].diff_type).to_ascii_uppercase();
         let _ = t.split_off(3);
-        if cfg.show_moved_files && combined_diffs[i].diff_type == diff::DiffType::Move {
+        if cfg.show_moved_files && combined_diffs[i].diff_type == diff::DiffType::MoveDir {
             println!("{}: {:?} -> {:?} ({})", t, combined_diffs[i].p, moved_to_paths[moved_to_idx], utility::get_shorthand_file_size(combined_diffs[i].size_here + combined_diffs[i].size_below));
             moved_to_idx += 1;
             continue;
