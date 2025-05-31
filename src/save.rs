@@ -94,7 +94,7 @@ pub fn read_diff_file(file_path: PathBuf) -> io::Result<DiffFile> {
     }
 }
 
-pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, min_diff_bytes: usize) -> DiffFile {
+pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, existing_moved_paths: Vec<PathBuf>, min_diff_bytes: usize) -> DiffFile {
     let mut ret = DiffFile {
         diffs: vec![],
         move_to_paths: HashMap::new(),
@@ -109,6 +109,7 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, min_diff_bytes: usize) -
     let mut new = &o[0];
     let mut remove_hash_idxs: HashMap<[u8; 16], usize> = HashMap::new();
     let mut add_hash_idxs: HashMap<[u8; 16], usize> = HashMap::new();
+    let mut moved_paths: Vec<PathBuf> = existing_moved_paths;
     while oi < o.len() || ni < n.len() {
         let old_left = oi < o.len();
         if old_left {
@@ -144,13 +145,12 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, min_diff_bytes: usize) -
         let diff_passes_threshold;
         match diff_type {
             DiffType::Add => {
-                // diff_passes_threshold = new.size_here + new.size_below >= min_diff_bytes as i64;
-                diff_passes_threshold = new.size_here >= min_diff_bytes as i64;
-                if diff_passes_threshold {
-                    let maybe_move_match = remove_hash_idxs.get(&new.md5);
-                    if maybe_move_match.is_some() {
-                        let update_idx = maybe_move_match.unwrap();
-                        let old_path = &ret.diffs[*update_idx].p.clone();
+                let maybe_move_match = remove_hash_idxs.get(&new.md5);
+                if maybe_move_match.is_some() {
+                    let update_idx = maybe_move_match.unwrap();
+                    let old_path = &ret.diffs[*update_idx].p.clone();
+                    ret.diffs[*update_idx].diff_type = diff::DiffType::Ignore;
+                    if moved_paths.iter().find(|el|{ old_path.starts_with(el) }).is_none() {
                         ret.diffs[*update_idx] = diff::CDirEntryDiff{
                             p: old_path.to_path_buf(),
                             t_diff: TDiff { s_diff: 0, ns_diff: 0 },
@@ -167,41 +167,41 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, min_diff_bytes: usize) -
                             symlinks: vec![],
                         };
                         ret.move_to_paths.insert(old_path.to_path_buf(), new.p.clone());
-                        remove_hash_idxs.remove(&new.md5);
-
-                        oi += 1;
-                        ni += 1;
-                        continue;
-                    } else {
-                        add_hash_idxs.insert(new.md5, ret.diffs.len());
+                        moved_paths.push(old_path.to_path_buf());
                     }
+                    remove_hash_idxs.remove(&new.md5);
 
-                    ret.diffs.push(CDirEntryDiff{
-                        diff_type: DiffType::Add,
-                        
-                        p: new.p.clone(),
-                        t_diff: get_t_diff_from_md(new.md, false),
-                    
-                        files_here: new.files_here,
-                        files_below: new.files_below,
-                        dirs_here: new.dirs_here,
-                        dirs_below: new.dirs_below,
-                        size_here: new.size_here as i64,
-                        size_below: new.size_below as i64,
-                    
-                        files: get_file_diffs(Vec::new(), new.files.to_vec(),),
-                        symlinks: get_file_diffs(Vec::new(), new.symlinks.to_vec()),
-                    })
+                    oi += 1;
+                    ni += 1;
+                    continue;
+                } else {
+                    add_hash_idxs.insert(new.md5, ret.diffs.len());
                 }
+
+                ret.diffs.push(CDirEntryDiff{
+                    diff_type: DiffType::Add,
+                    
+                    p: new.p.clone(),
+                    t_diff: get_t_diff_from_md(new.md, false),
+                
+                    files_here: new.files_here,
+                    files_below: new.files_below,
+                    dirs_here: new.dirs_here,
+                    dirs_below: new.dirs_below,
+                    size_here: new.size_here as i64,
+                    size_below: new.size_below as i64,
+                
+                    files: get_file_diffs(Vec::new(), new.files.to_vec(),),
+                    symlinks: get_file_diffs(Vec::new(), new.symlinks.to_vec()),
+                })
             },
             DiffType::Remove => {
-                // diff_passes_threshold = old.size_here + old.size_below >= min_diff_bytes as i64;
-                diff_passes_threshold = old.size_here >= min_diff_bytes as i64;
-                if diff_passes_threshold {
-                    let maybe_move_match = add_hash_idxs.get(&old.md5);
-                    if maybe_move_match.is_some() {
-                        let update_idx = maybe_move_match.unwrap();
-                        let new_path = ret.diffs[*update_idx].p.clone();
+                let maybe_move_match = add_hash_idxs.get(&old.md5);
+                if maybe_move_match.is_some() {
+                    let update_idx = maybe_move_match.unwrap();
+                    let new_path = ret.diffs[*update_idx].p.clone();
+                    ret.diffs[*update_idx].diff_type = diff::DiffType::Ignore;
+                    if moved_paths.iter().find(|el|{ old.p.starts_with(el) }).is_none() {
                         ret.diffs[*update_idx] = diff::CDirEntryDiff{
                             p: old.p.clone(),
                             t_diff: TDiff { s_diff: 0, ns_diff: 0 },
@@ -218,32 +218,33 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, min_diff_bytes: usize) -
                             symlinks: vec![],
                         };
                         ret.move_to_paths.insert(old.p.clone(), new_path.to_path_buf());
-                        add_hash_idxs.remove(&old.md5);
-
-                        oi += 1;
-                        ni += 1;
-                        continue;
-                    } else {
-                        remove_hash_idxs.insert(old.md5, ret.diffs.len());
+                        moved_paths.push(old.p.to_path_buf());
                     }
+                    add_hash_idxs.remove(&old.md5);
 
-                    ret.diffs.push(CDirEntryDiff{
-                        diff_type: DiffType::Remove,
-                        
-                        p: old.p.clone(),
-                        t_diff: get_t_diff_from_md(old.md, true),
-                    
-                        files_here: old.files_here,
-                        files_below: old.files_below,
-                        dirs_here: old.dirs_here,
-                        dirs_below: old.dirs_below,
-                        size_here: old.size_here as i64 * -1,
-                        size_below: old.size_below as i64 * -1,
-                    
-                        files: get_file_diffs(old.files.to_vec(), Vec::new()),
-                        symlinks: get_file_diffs(old.symlinks.to_vec(), Vec::new()),
-                    })
+                    oi += 1;
+                    ni += 1;
+                    continue;
+                } else {
+                    remove_hash_idxs.insert(old.md5, ret.diffs.len());
                 }
+
+                ret.diffs.push(CDirEntryDiff{
+                    diff_type: DiffType::Remove,
+                    
+                    p: old.p.clone(),
+                    t_diff: get_t_diff_from_md(old.md, true),
+                
+                    files_here: old.files_here,
+                    files_below: old.files_below,
+                    dirs_here: old.dirs_here,
+                    dirs_below: old.dirs_below,
+                    size_here: old.size_here as i64 * -1,
+                    size_below: old.size_below as i64 * -1,
+                
+                    files: get_file_diffs(old.files.to_vec(), Vec::new()),
+                    symlinks: get_file_diffs(old.symlinks.to_vec(), Vec::new()),
+                })
             },
             DiffType::Modify => {
                 let maybe_modified_dir_diff = get_maybe_modified_dir_diff(old.clone(), new.clone());
@@ -263,6 +264,11 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, min_diff_bytes: usize) -
         oi += 1;
         ni += 1;
     }
+
+    // Apply filter given `-md` argument
+    ret.diffs = ret.diffs.into_iter().filter(|it| {
+        return it.diff_type != DiffType::Ignore && (it.diff_type == DiffType::MoveDir || it.size_here.abs() >= min_diff_bytes as i64);
+    }).collect();
 
     return ret;
 }

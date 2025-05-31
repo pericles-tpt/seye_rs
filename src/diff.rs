@@ -6,6 +6,7 @@ pub enum DiffType {
     Add,
     Remove,
     Modify,
+    Ignore,
     MoveDir,
     // TODO: Add `MoveFile` type and add `md5` property to `FileEntry` to support it
 }

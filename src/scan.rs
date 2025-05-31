@@ -117,7 +117,8 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
     let num_scan_files = curr_scan[0].files_here + curr_scan[0].files_below;
     let num_scan_dirs = curr_scan[0].dirs_here + curr_scan[0].dirs_below + 1;
 
-    let diff: DiffFile = diff_saves(initial_scan, curr_scan, min_diff_bytes);
+    let existing_moved_paths = combined_diffs.move_to_paths.into_keys().collect();
+    let diff: DiffFile = diff_saves(initial_scan, curr_scan, existing_moved_paths, min_diff_bytes);
     if diff.diffs.len() > 0 {
         let mut path_to_subsequent = output_path.clone();
         path_to_subsequent.push(format!("{}_diff_{}", path_hash, iteration_count + 1));
