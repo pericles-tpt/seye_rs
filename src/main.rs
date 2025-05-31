@@ -62,12 +62,6 @@ fn main() {
                 eprintln!("invalid argument provided: {}", arg_eval_res.err().unwrap());
                 return;
             }
-            
-            // Scanning on 1 additional thread doesn't justify the performance overhead
-            if cfg.num_threads == 1 {
-                println!("WARNING: `num_threads` set to 1, setting `num_threads` to 0 (1 extra thread isn't worth the performance overhead)");
-                cfg.num_threads = 0;
-            }
 
             // Get input scan path
             let maybe_target_str = params[num_args - 2];
