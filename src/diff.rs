@@ -213,7 +213,7 @@ pub fn get_entry_from_dir_diff(d: CDirEntryDiff) -> CDirEntry {
         files: get_f_entries_from_f_diffs(d.files),
         symlinks: get_f_entries_from_f_diffs(d.symlinks),
     };
-    ret.md5 = get_md5_of_struct(&ret);
+    ret.md5 = get_md5_of_cdirentry(ret.clone());
     
     return ret;
 }

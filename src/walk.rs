@@ -2,8 +2,7 @@ use std::fs::metadata;
 use std::{ffi::OsString, fs::DirEntry, os::unix::fs::MetadataExt, time::SystemTime};
 use std::{collections::{HashMap, HashSet}, fs::{symlink_metadata, Metadata}, path::PathBuf, time::Duration};
 use serde::{Deserialize, Deserializer, Serialize};
-
-use crate::utility::get_md5_of_struct;
+use crate::utility;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct FileEntry {
@@ -148,7 +147,7 @@ pub fn walk_until_end(root: std::path::PathBuf, parent_map: &mut HashMap<std::pa
         df[curr_idx].symlinks = symlink_entries.into_boxed_slice();
         df[curr_idx].files = file_entries.into_boxed_slice();
 
-        df[curr_idx].md5 = get_md5_of_struct(&df[curr_idx]);
+        df[curr_idx].md5 = utility::get_md5_of_cdirentry(df[curr_idx].clone());
     }
     
     return df;
@@ -216,7 +215,7 @@ pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, _skip_set: &
         other_entries[curr_idx].symlinks = symlink_entries.into_boxed_slice();
         other_entries[curr_idx].files = file_entries.into_boxed_slice();
 
-        other_entries[curr_idx].md5 = get_md5_of_struct(&other_entries[curr_idx]);
+        other_entries[curr_idx].md5 = utility::get_md5_of_cdirentry(other_entries[curr_idx].clone());
 
         d_idx += 1;
     }

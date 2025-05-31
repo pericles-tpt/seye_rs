@@ -1,7 +1,6 @@
 use std::{collections::HashSet, path::PathBuf};
 use chrono;
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
-use serde::Serialize;
 use crate::walk::{walk_collect_until_limit, CDirEntry};
 use chksum_md5 as md5;
 
@@ -156,19 +155,20 @@ fn tz_secs_to_tz_str(tz_secs: i32) -> String {
     return format!("{}{:02}:{:02}", sign, hours, mins)
 }
 
-pub fn get_md5_of_struct<T: Serialize>(inp: &T) -> [u8; 16] {
-    let mut ret: [u8; 16] = [0; 16];
+pub fn get_md5_of_cdirentry(mut inp: CDirEntry) -> [u8; 16] {
+    let zero_md5: [u8; 16] = [0; 16];
     
+    inp.p = PathBuf::new();
+    inp.md5 = [0; 16];
     let res = bincode::serialize(&inp);
     if res.is_err() {
-        return ret;
+        return zero_md5;
     }
 
     let digest = md5::chksum(res.unwrap());
     if digest.is_err() {
-        return ret;
+        return zero_md5;
     }
     
-    ret = digest.unwrap().into_inner();
-    return ret;
+    return digest.unwrap().into_inner();
 }
