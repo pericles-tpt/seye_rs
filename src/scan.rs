@@ -1,4 +1,6 @@
 use std::{collections::{HashMap, HashSet}, ffi::OsStr, fs::File, io::{BufWriter, Error}, os::unix::fs::MetadataExt, time::SystemTime};
+use rayon::{slice::ParallelSliceMut};
+
 use crate::{diff::{add_diffs_to_items, get_entry_from_dir_diff, merge_dir_diff_to_entry, CDirEntryDiff, DiffFile, DiffType}, utility::collect_from_root};
 use crate::{save::{add_dir_diffs, diff_saves, get_hash_iteration_count_from_file_names, read_diff_file, read_save_file}, walk::CDirEntry};
 
@@ -11,14 +13,13 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
     let skip_set: HashSet<std::path::PathBuf> = HashSet::from_iter(vec![output_path.clone()]);
     let mut curr_scan;
     let mut pm: HashMap<std::path::PathBuf, usize> = HashMap::new();
-    
+
     let maybe_curr_scan = collect_from_root(target_path, skip_set, num_threads, thread_add_dir_limit);
     if maybe_curr_scan.is_err() {
         return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to do MT walk: {:?}", maybe_curr_scan.err())))
     }
     curr_scan = maybe_curr_scan.unwrap();
-
-    curr_scan.sort_by(|a, b| {
+    curr_scan.par_sort_by(|a, b| {
         return a.p.cmp(&b.p);
     });
 
@@ -109,7 +110,7 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
     }
 
     // Step above probably screwed up the order...
-    initial_scan.sort_by(|a, b| {
+    initial_scan.par_sort_by(|a, b| {
         return a.p.cmp(&b.p);
     });
 
@@ -176,16 +177,14 @@ pub fn bubble_up_props(scan: &mut Vec<CDirEntry>, pm: &mut HashMap<std::path::Pa
         for i in 0..scan.len() {
             // Calculate memory usage for self
             let curr_idx = scan.len() - 1 - i;
-            let d = scan[curr_idx].clone();
-    
-            if let Some(parent) = d.p.parent() {
+            if let Some(parent) = scan[curr_idx].p.parent() {
                 if let Some(maybe_ent) = &pm.get(parent) {
                     let idx = *maybe_ent;
     
                     scan[*idx].dirs_here += 1;
-                    scan[*idx].dirs_below += d.dirs_here + d.dirs_below;
-                    scan[*idx].files_below += d.files_here + d.files_below;
-                    scan[*idx].size_below += d.size_here + d.size_below;
+                    scan[*idx].dirs_below += scan[curr_idx].dirs_here + scan[curr_idx].dirs_below;
+                    scan[*idx].files_below += scan[curr_idx].files_here + scan[curr_idx].files_below;
+                    scan[*idx].size_below += scan[curr_idx].size_here + scan[curr_idx].size_below;
                 }
             }
         }

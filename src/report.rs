@@ -15,7 +15,7 @@ pub fn report_changes(target_path: PathBuf, output_path: PathBuf, cfg: Config) -
 
     let mut combined_diffs: DiffFile = DiffFile { diffs: vec![], move_to_paths: HashMap::new() };
     if iteration_count > -1 {
-        let mut diff_prefix = output_path.clone();
+        let mut diff_prefix = output_path;
         diff_prefix.push("tmp");
         diff_prefix.set_file_name(format!("{}_diff", path_hash));
         let res: Result<DiffFile, Error> = scan::add_combined_diffs(&diff_prefix, iteration_count as u16, cfg.maybe_start_report_time, cfg.maybe_end_report_time);

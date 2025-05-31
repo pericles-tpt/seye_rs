@@ -105,18 +105,18 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, min_diff_bytes: usize) -
 
     let mut oi = 0;
     let mut ni = 0;
-    let mut old = o[0].clone();
-    let mut new = o[0].clone();
+    let mut old = &o[0];
+    let mut new = &o[0];
     let mut remove_hash_idxs: HashMap<[u8; 16], usize> = HashMap::new();
     let mut add_hash_idxs: HashMap<[u8; 16], usize> = HashMap::new();
     while oi < o.len() || ni < n.len() {
         let old_left = oi < o.len();
         if old_left {
-            old = o[oi].clone();
+            old = &o[oi];
         }
         let new_left = ni < n.len();
         if new_left {
-            new = n[ni].clone();
+            new = &n[ni];
         }
 
         let mut diff_type: DiffType = DiffType::Add; // -> new_left        
