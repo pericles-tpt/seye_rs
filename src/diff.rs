@@ -1,14 +1,14 @@
-use std::{cmp::Ordering, ffi::OsString, path::PathBuf, time::{Duration, SystemTime}};
+use std::{cmp::Ordering, collections::HashMap, ffi::OsString, path::PathBuf, time::{Duration, SystemTime}};
 use serde::{Deserialize, Deserializer, Serialize};
-use crate::{utility::get_md5_of_struct, walk::{CDirEntry, FileEntry}};
+use crate::{utility::get_md5_of_cdirentry, walk::{CDirEntry, FileEntry}};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum DiffType {
     Add,
     Remove,
     Modify,
-    MoveDir,
-    // TODO: Create `MoveFile` and corresponding `md5` property on `FileEntry` 
+    Move,
+    // TODO: Apply special rules for `Move` on `FileEntry` and add `md5` property to `FileEntry` to support it
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -36,6 +36,12 @@ impl Default for FileEntryDiff {
 pub struct TDiff {
     pub s_diff: i64,
     pub ns_diff: i128,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DiffFile {
+    pub diffs: Vec<CDirEntryDiff>,
+    pub move_to_paths: HashMap<PathBuf, PathBuf>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

@@ -1,5 +1,5 @@
 use std::{collections::{HashMap, HashSet}, ffi::OsStr, fs::File, io::{BufWriter, Error}, os::unix::fs::MetadataExt, time::SystemTime};
-use crate::{diff::{add_diffs_to_items, get_entry_from_dir_diff, merge_dir_diff_to_entry, CDirEntryDiff, DiffType}, utility::collect_from_root};
+use crate::{diff::{add_diffs_to_items, get_entry_from_dir_diff, merge_dir_diff_to_entry, CDirEntryDiff, DiffFile, DiffType}, utility::collect_from_root};
 use crate::{save::{add_dir_diffs, diff_saves, get_hash_iteration_count_from_file_names, read_diff_file, read_save_file}, walk::{walk_until_end, CDirEntry}};
 
 pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, min_diff_bytes: usize, num_threads: usize, thread_add_dir_limit: usize) -> Result<(usize, usize), Error> {
@@ -71,12 +71,12 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
         Err(e) => {return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to read entries from file: {}", e)))}
     }
 
-    let mut combined_diffs: Vec<CDirEntryDiff> = Vec::new();
+    let mut combined_diffs: DiffFile = DiffFile { diffs: vec![], move_to_paths: HashMap::new() };
     if iteration_count > -1 {
         let mut diff_prefix = output_path.clone();
         diff_prefix.push("tmp");
         diff_prefix.set_file_name(format!("{}_diff", path_hash));
-        let res: Result<Vec<CDirEntryDiff>, Error> = add_combined_diffs(&diff_prefix, iteration_count as u16, None, None);
+        let res: Result<DiffFile, Error> = add_combined_diffs(&diff_prefix, iteration_count as u16, None, None);
         match res {
             Ok(ds) => {
                 combined_diffs = ds;
@@ -85,7 +85,15 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
         }
     }
 
-    let res = add_diffs_to_items::<CDirEntry, CDirEntryDiff>(&mut initial_scan, &mut combined_diffs, |a, b| {
+    // TODO: This is VERY dumb, there should be a faster way to do this
+    let mut not_move_diffs: Vec<CDirEntryDiff> = combined_diffs.diffs.clone().into_iter().filter(|el| {
+        return el.diff_type != DiffType::Move
+    }).collect();
+    let move_diffs: Vec<CDirEntryDiff> = combined_diffs.diffs.into_iter().filter(|el| {
+        return el.diff_type == DiffType::Move
+    }).collect();
+
+    let res = add_diffs_to_items::<CDirEntry, CDirEntryDiff>(&mut initial_scan, &mut not_move_diffs, |a, b| {
         return a.p.cmp(&b.p);
     }, |it, d| {
         return it.p == d.p;
@@ -94,36 +102,45 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
         return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("failed to add diffs to scan: {:?}", res.err())))
     }
 
-    // TODO: Get newest modified from `initial_scan`
-    let mut newest_initial_entry_time: Option<SystemTime> = None;
-    for ent in &initial_scan {
-        if !ent.md.is_none() {
-            if newest_initial_entry_time.is_none() || ent.md.unwrap() > newest_initial_entry_time.unwrap() {
-                newest_initial_entry_time = ent.md;
+    if move_diffs.len() > 0 {
+        let mut mvdi = 0;
+        for i in 0..initial_scan.len() {
+            if initial_scan[i].p == move_diffs[mvdi].p {
+                let maybe_to_path = combined_diffs.move_to_paths.get(&initial_scan[i].p);
+                if maybe_to_path.is_some() {
+                    initial_scan[i].p = maybe_to_path.unwrap().to_path_buf();
+                }
+                mvdi += 1;
+
+                if mvdi >= move_diffs.len() {
+                    break;
+                }
             }
         }
     }
-    if newest_initial_entry_time.is_none() {
-        return Err(std::io::Error::new(std::io::ErrorKind::Other, "failed to find valid 'modified' time from initial_scan"))
-    }
+
+    // Step above probably screwed up the order...
+    initial_scan.sort_by(|a, b| {
+        return a.p.cmp(&b.p);
+    });
 
     let num_scan_files = curr_scan[0].files_here + curr_scan[0].files_below;
     let num_scan_dirs = curr_scan[0].dirs_here + curr_scan[0].dirs_below + 1;
 
-    let diffs: Vec<CDirEntryDiff> = diff_saves(initial_scan, curr_scan, min_diff_bytes);
-    if diffs.len() > 0 {
+    let diff: DiffFile = diff_saves(initial_scan, curr_scan, min_diff_bytes);
+    if diff.diffs.len() > 0 {
         let mut path_to_subsequent = output_path.clone();
         path_to_subsequent.push(format!("{}_diff_{}", path_hash, iteration_count + 1));
         let f  = File::create(path_to_subsequent)?;
         let writer = BufWriter::new(f);
-        bincode::serialize_into(writer, &diffs).expect("failed to seralise");
+        bincode::serialize_into(writer, &diff).expect("failed to seralise");
     }
 
     Ok((num_scan_files, num_scan_dirs))
 }
 
-pub fn add_combined_diffs(diff_path: &std::path::PathBuf, diff_count: u16, maybe_start_diff_time: Option<SystemTime>, maybe_end_diff_time: Option<SystemTime>) -> std::io::Result<Vec<CDirEntryDiff>> {
-    let combined_diffs = Vec::new();
+pub fn add_combined_diffs(diff_path: &std::path::PathBuf, diff_count: u16, maybe_start_diff_time: Option<SystemTime>, maybe_end_diff_time: Option<SystemTime>) -> std::io::Result<DiffFile> {
+    let combined_diffs = DiffFile { diffs: vec![], move_to_paths: HashMap::new() };
     if diff_count == 0 {
         return Ok(combined_diffs);
     }
@@ -141,7 +158,7 @@ pub fn add_combined_diffs(diff_path: &std::path::PathBuf, diff_count: u16, maybe
     }
     
     // Combine diffs
-    let mut combined_diffs = vec![];
+    let mut combined_diffs = DiffFile { diffs: vec![], move_to_paths: HashMap::new() };
     let is_diff_range_restricted = maybe_start_diff_time.is_some() || maybe_end_diff_time.is_some();
     for i in 1..(diff_count + 1) {
         let mut curr_diff_path = diff_path.clone();
