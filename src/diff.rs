@@ -1,8 +1,7 @@
-use std::{cmp::Ordering, collections::HashMap, ffi::OsString, path::PathBuf, time::{Duration, SystemTime}};
-use serde::{Deserialize, Deserializer, Serialize};
-use crate::{utility::get_md5_of_cdirentry, walk::{CDirEntry, FileEntry}};
+use crate::walk;
+use crate::utility;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub enum DiffType {
     Add,
     Remove,
@@ -11,9 +10,9 @@ pub enum DiffType {
     // TODO: Apply special rules for `Move` on `FileEntry` and add `md5` property to `FileEntry` to support it
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct FileEntryDiff {
-    pub bn: OsString,
+    pub bn: std::ffi::OsString,
     pub sz: i128,
     pub t_diff: TDiff,
     pub diff_type: DiffType,
@@ -21,7 +20,7 @@ pub struct FileEntryDiff {
 impl Default for FileEntryDiff {
     fn default() -> Self {
         FileEntryDiff {
-            bn: OsString::new(),
+            bn: std::ffi::OsString::new(),
             sz: 0,
             t_diff: TDiff{
                 s_diff: 0,
@@ -32,21 +31,21 @@ impl Default for FileEntryDiff {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct TDiff {
     pub s_diff: i64,
     pub ns_diff: i128,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct DiffFile {
     pub diffs: Vec<CDirEntryDiff>,
-    pub move_to_paths: HashMap<PathBuf, PathBuf>,
+    pub move_to_paths: std::collections::HashMap<std::path::PathBuf, std::path::PathBuf>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct CDirEntryDiff {
-    pub p: PathBuf,
+    pub p: std::path::PathBuf,
     pub t_diff: TDiff,
 
     pub files_here: usize,
@@ -58,26 +57,14 @@ pub struct CDirEntryDiff {
     
     pub diff_type: DiffType,
 
-    #[serde(deserialize_with = "deserialize_boxed_slice")]
-    pub files: Box<[FileEntryDiff]>,
-    #[serde(deserialize_with = "deserialize_boxed_slice")]
-    pub symlinks: Box<[FileEntryDiff]>,
-}
-
-fn deserialize_boxed_slice<'de, D>(deserializer: D) -> Result<Box<[FileEntryDiff]>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    // Deserialize into a Vec<FileEntry>
-    let vec: Vec<FileEntryDiff> = Vec::deserialize(deserializer)?;
-    // Convert Vec<FileEntry> into Box<[FileEntry]>
-    Ok(vec.into_boxed_slice())
+    pub files: Vec<FileEntryDiff>,
+    pub symlinks: Vec<FileEntryDiff>,
 }
 
 pub fn add_diffs_to_items<I: Clone + std::fmt::Debug + PartialEq, D: Clone + std::fmt::Debug>(
     items: &mut Vec<I>, 
     diffs: &mut Vec<D>, 
-    items_sort: fn(a: &I, b: &I) -> Ordering,
+    items_sort: fn(a: &I, b: &I) -> std::cmp::Ordering,
     item_diff_match: fn(it: &I, d: &D) -> bool,
     diff_adds_items: fn(d: &D) -> bool,
     diff_removes_item: fn(d: &D) -> bool,
@@ -139,7 +126,7 @@ pub fn add_diffs_to_items<I: Clone + std::fmt::Debug + PartialEq, D: Clone + std
     look_idx = 0;
     while look_idx < items.len() {
         let curr = items[look_idx].clone();
-        let add    = items_sort(&curr, &add_items[0]) == Ordering::Greater;
+        let add    = items_sort(&curr, &add_items[0]) == std::cmp::Ordering::Greater;
         if !add {
             look_idx += 1;
             continue;
@@ -152,7 +139,7 @@ pub fn add_diffs_to_items<I: Clone + std::fmt::Debug + PartialEq, D: Clone + std
         // TODO: Look at VecDequeue
         // Shift everything down until a spot is found for `curr`
         let mut i = 1;
-        while i < add_items.len() && items_sort(&curr, &add_items[i]) != Ordering::Less {
+        while i < add_items.len() && items_sort(&curr, &add_items[i]) != std::cmp::Ordering::Less {
             add_items[i - 1] = add_items[i].clone();
             i += 1;
         }
@@ -161,14 +148,14 @@ pub fn add_diffs_to_items<I: Clone + std::fmt::Debug + PartialEq, D: Clone + std
         look_idx += 1;
     }
     let num_items = items.len() - 1;
-    if items_sort(&add_items[add_items.len() - 1], &items[num_items]) == Ordering::Greater {
+    if items_sort(&add_items[add_items.len() - 1], &items[num_items]) == std::cmp::Ordering::Greater {
         items[num_items] = add_items[add_items.len() - 1].clone();
     }
 
     return Ok(());
 }
 
-pub fn merge_dir_diff_to_entry(ent: &mut CDirEntry, d: CDirEntryDiff) {
+pub fn merge_dir_diff_to_entry(ent: &mut walk::CDirEntry, d: CDirEntryDiff) {
     ent.md = t_diff_to_system_time(d.t_diff, ent.md);
 
     ent.files_here += d.files_here;
@@ -179,34 +166,34 @@ pub fn merge_dir_diff_to_entry(ent: &mut CDirEntry, d: CDirEntryDiff) {
     ent.size_below += d.size_below;
 
     let mut files_vec = ent.files.to_vec();
-    _ = add_diffs_to_items::<FileEntry, FileEntryDiff>(&mut files_vec, &mut d.files.to_vec(), 
+    _ = add_diffs_to_items::<walk::FileEntry, FileEntryDiff>(&mut files_vec, &mut d.files.to_vec(), 
     |a, b|{return a.bn.cmp(&b.bn)}, 
     |it, d| {return it.bn == d.bn}, 
     |d|{return d.diff_type == DiffType::Add}, 
     |d|{return d.diff_type == DiffType::Remove}, 
     get_entry_from_file_diff, 
     merge_file_diff_to_entry);
-    ent.files = files_vec.into_boxed_slice();
+    ent.files = files_vec;
 
     let mut symlinks_vec = ent.symlinks.to_vec();
-    _ = add_diffs_to_items::<FileEntry, FileEntryDiff>(&mut symlinks_vec, &mut d.symlinks.to_vec(), 
+    _ = add_diffs_to_items::<walk::FileEntry, FileEntryDiff>(&mut symlinks_vec, &mut d.symlinks.to_vec(), 
     |a, b|{return a.bn.cmp(&b.bn)}, 
     |it, d| {return it.bn == d.bn}, 
     |d|{return d.diff_type == DiffType::Add}, 
     |d|{return d.diff_type == DiffType::Remove}, 
     get_entry_from_file_diff, 
     merge_file_diff_to_entry);
-    ent.symlinks = symlinks_vec.into_boxed_slice();
+    ent.symlinks = symlinks_vec;
 
 }
 
-pub fn merge_file_diff_to_entry(ent: &mut FileEntry, d: FileEntryDiff) {
+pub fn merge_file_diff_to_entry(ent: &mut walk::FileEntry, d: FileEntryDiff) {
     ent.md = t_diff_to_system_time(d.t_diff, ent.md);
     ent.sz = d.sz as u64;
 }
 
-pub fn get_entry_from_dir_diff(d: CDirEntryDiff) -> CDirEntry {
-    let mut ret = CDirEntry {
+pub fn get_entry_from_dir_diff(d: CDirEntryDiff) -> walk::CDirEntry {
+    let mut ret = walk::CDirEntry {
         p: d.p,
         md: t_diff_to_system_time(d.t_diff, None),
         files_here: d.files_here,
@@ -219,35 +206,35 @@ pub fn get_entry_from_dir_diff(d: CDirEntryDiff) -> CDirEntry {
         files: get_f_entries_from_f_diffs(d.files),
         symlinks: get_f_entries_from_f_diffs(d.symlinks),
     };
-    ret.md5 = get_md5_of_cdirentry(ret.clone());
+    ret.md5 = utility::get_md5_of_cdirentry(ret.clone());
     
     return ret;
 }
 
-pub fn get_entry_from_file_diff(d: FileEntryDiff) -> FileEntry {
-    return FileEntry {
+pub fn get_entry_from_file_diff(d: FileEntryDiff) -> walk::FileEntry {
+    return walk::FileEntry {
         bn: d.bn,
         sz: d.sz as u64,
         md: t_diff_to_system_time(d.t_diff, None),
     }
 }
 
-pub fn get_f_entries_from_f_diffs(fs: Box<[FileEntryDiff]>) -> Box<[FileEntry]> {
+pub fn get_f_entries_from_f_diffs(fs: Vec<FileEntryDiff>) -> Vec<walk::FileEntry> {
     let mut ret = Vec::with_capacity(fs.len());
     for f in fs {
         ret.push(get_entry_from_file_diff(f))
     }
-    return ret.into_boxed_slice();
+    return ret;
 }
 
-pub fn t_diff_to_system_time(td: TDiff, old_md: Option<SystemTime>) -> Option<SystemTime> {
-    let mut nmd = SystemTime::UNIX_EPOCH;
+pub fn t_diff_to_system_time(td: TDiff, old_md: Option<std::time::SystemTime>) -> Option<std::time::SystemTime> {
+    let mut nmd = std::time::SystemTime::UNIX_EPOCH;
     if !old_md.is_none() {
         nmd = old_md.unwrap();
     }
-    let mut dur = Duration::new(td.s_diff as u64, td.ns_diff as u32);
+    let mut dur = std::time::Duration::new(td.s_diff as u64, td.ns_diff as u32);
     if td.s_diff < 0 {
-        dur = Duration::new((td.s_diff * -1) as u64, (td.ns_diff * -1) as u32);
+        dur = std::time::Duration::new((td.s_diff * -1) as u64, (td.ns_diff * -1) as u32);
         nmd.checked_sub(dur);
     } else {
         nmd.checked_add(dur);

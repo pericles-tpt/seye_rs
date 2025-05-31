@@ -1,7 +1,7 @@
 use std::fs::metadata;
 use std::{ffi::OsString, fs::DirEntry, os::unix::fs::MetadataExt, time::SystemTime};
-use std::{collections::{HashMap, HashSet}, fs::{symlink_metadata, Metadata}, path::PathBuf, time::Duration};
-use serde::{Deserialize, Deserializer, Serialize};
+use std::{collections::{HashMap, HashSet}, fs::{symlink_metadata, Metadata}, path::PathBuf};
+use serde::{Deserialize, Serialize};
 use crate::utility;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -33,124 +33,8 @@ pub struct CDirEntry {
     pub md: Option<SystemTime>,
     pub md5: [u8; 16],
 
-    #[serde(deserialize_with = "deserialize_boxed_slice")]
-    pub files: Box<[FileEntry]>,
-    #[serde(deserialize_with = "deserialize_boxed_slice")]
-    pub symlinks: Box<[FileEntry]>,
-}
-
-fn deserialize_boxed_slice<'de, D>(deserializer: D) -> Result<Box<[FileEntry]>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    // Deserialize into a Vec<FileEntry>
-    let vec: Vec<FileEntry> = Vec::deserialize(deserializer)?;
-    // Convert Vec<FileEntry> into Box<[FileEntry]>
-    Ok(vec.into_boxed_slice())
-}
-
-pub fn walk_until_end(root: std::path::PathBuf, parent_map: &mut HashMap<std::path::PathBuf, usize>, skip_set: &mut HashSet<PathBuf>) -> std::vec::Vec<CDirEntry> {
-    let mut df: std::vec::Vec<CDirEntry> = Vec::new();
-    let mut v: Vec<std::path::PathBuf> = Vec::new();
-
-    let mut total_time_stat = Duration::new(0, 0);
-    // let mut sc = 0;
-    let mut total_time_readdir = Duration::new(0, 0);
-    // let mut rdc = 0;
-
-    // Stage 1. Traverse file tree and add to list
-    // Push root onto stack
-    let _ = v.push(root);
-    let mut idx:i64 = -1;
-    loop {
-        idx += 1;
-        if idx as usize >= v.len() {
-            break;
-        }
-        let mp = &v[idx as usize];
-
-        if skip_set.contains(mp) {
-            continue;
-        }
-
-        let bef1 = std::time::Instant::now();
-        let rd = std::fs::read_dir(mp);
-        let trd = bef1.elapsed();
-        total_time_readdir += trd;
-        // rdc += 1;
-
-        if rd.is_err() {
-            // TODO: Handle error
-            continue;
-        }
-        let entries: Vec<Result<DirEntry, std::io::Error>> = rd.unwrap().collect();
-
-        let bef2 = std::time::Instant::now();
-        let maybe_md = symlink_metadata(mp);
-        let ts = bef2.elapsed();
-        total_time_stat += ts;
-        // sc += 1;
-        if maybe_md.is_err() {
-            // TODO: Handle error
-            continue;
-        }
-        let md = maybe_md.unwrap();
-        let curr_idx = insert_dir_entry(&md, &mp, &mut df, parent_map);
-
-        let mut file_entries: Vec<FileEntry> = Vec::with_capacity(entries.len());
-        let mut symlink_entries: Vec<FileEntry> = Vec::with_capacity(entries.len());
-        for ent in entries {
-            let Ok(val) = ent else { continue };
-            let Ok(ft) = val.file_type() else { continue };
-
-            // if IGNORE_LIST.contains(basename) {
-            //     continue;
-            // }
-
-            if ft.is_symlink() {
-                continue;
-            }
-
-            let p = &val.path();
-            let maybe_basename = p.file_name();
-            if maybe_basename.is_none() {
-                continue;
-            }
-            let basename = maybe_basename.unwrap();
-
-            if ft.is_dir() {
-                let _ = v.push(p.to_path_buf());
-                continue 
-            }
-
-            let bef2 = std::time::Instant::now();
-            let maybe_fmd = symlink_metadata(p);
-            let ts = bef2.elapsed();
-            total_time_stat += ts;
-            // sc += 1;
-            if maybe_fmd.is_err() {
-                // TODO: Handle error
-                continue;
-            }
-            let fmd = maybe_fmd.unwrap();
-
-            let basename_string = basename.to_os_string();
-            if fmd.is_symlink() {
-                insert_file_entry(&fmd, basename_string, &mut symlink_entries);
-            } else {
-                insert_file_entry(&fmd, basename_string, &mut file_entries);
-            }
-
-            df[curr_idx].files_here += 1;
-            df[curr_idx].size_here += fmd.size() as i64;
-        }        
-        df[curr_idx].symlinks = symlink_entries.into_boxed_slice();
-        df[curr_idx].files = file_entries.into_boxed_slice();
-
-        df[curr_idx].md5 = utility::get_md5_of_cdirentry(df[curr_idx].clone());
-    }
-    
-    return df;
+    pub files: Vec<FileEntry>,
+    pub symlinks: Vec<FileEntry>,
 }
 
 pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, _skip_set: &HashSet<PathBuf>, other_entries: &mut Vec<CDirEntry>, thread_readdir_limit: usize) -> std::io::Result<Vec<PathBuf>> {
@@ -212,8 +96,8 @@ pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, _skip_set: &
             other_entries[curr_idx].files_here += 1;
             other_entries[curr_idx].size_here += fmd.size() as i64;
         }        
-        other_entries[curr_idx].symlinks = symlink_entries.into_boxed_slice();
-        other_entries[curr_idx].files = file_entries.into_boxed_slice();
+        other_entries[curr_idx].symlinks = symlink_entries;
+        other_entries[curr_idx].files = file_entries;
 
         other_entries[curr_idx].md5 = utility::get_md5_of_cdirentry(other_entries[curr_idx].clone());
 
@@ -255,8 +139,8 @@ fn insert_dir_entry(md: &Metadata, p: &PathBuf, all_dirs: &mut Vec<CDirEntry>, p
         size_below: 0,
         md5: [0; 16],
 
-        files: Box::new([FileEntry::default()]),
-        symlinks: Box::new([FileEntry::default()]),
+        files: vec![],
+        symlinks: vec![],
     };
     all_dirs.push(e);
     path_idx_map.insert(pb, all_dirs.len() - 1);

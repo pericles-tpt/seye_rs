@@ -163,8 +163,8 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, min_diff_bytes: usize) -
                             size_below: 0,
                             
                             diff_type: diff::DiffType::Move,
-                            files: vec![].into_boxed_slice(),
-                            symlinks: vec![].into_boxed_slice(),
+                            files: vec![],
+                            symlinks: vec![],
                         };
                         ret.move_to_paths.insert(old_path.to_path_buf(), new.p.clone());
                         remove_hash_idxs.remove(&new.md5);
@@ -214,8 +214,8 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, min_diff_bytes: usize) -
                             size_below: 0,
                             
                             diff_type: diff::DiffType::Move,
-                            files: vec![].into_boxed_slice(),
-                            symlinks: vec![].into_boxed_slice(),
+                            files: vec![],
+                            symlinks: vec![],
                         };
                         ret.move_to_paths.insert(old.p.clone(), new_path.to_path_buf());
                         add_hash_idxs.remove(&old.md5);
@@ -311,7 +311,7 @@ fn get_t_diff_from_md(md: Option<SystemTime>, negate: bool) -> TDiff {
     return ret;
 }
 
-fn get_file_diffs(o: Vec<FileEntry>, n: Vec<FileEntry>) -> Box<[FileEntryDiff]> {
+fn get_file_diffs(o: Vec<FileEntry>, n: Vec<FileEntry>) -> Vec<FileEntryDiff> {
     let box_size: usize = if n.len() > o.len() {
         n.len()
     } else {
@@ -404,7 +404,7 @@ fn get_file_diffs(o: Vec<FileEntry>, n: Vec<FileEntry>) -> Box<[FileEntryDiff]> 
         })
     }
 
-    return diffs.into_boxed_slice();
+    return diffs;
 }
 
 pub fn add_dir_diffs(old: DiffFile, new: DiffFile) -> DiffFile {
@@ -487,7 +487,7 @@ fn diffs_match_except_time(old: &CDirEntryDiff, new: &CDirEntryDiff) -> bool {
     && (old.size_here + old.size_below) + (new.size_here + new.size_below) == 0
 }
 
-fn merge_file_diffs(old: Box<[FileEntryDiff]>, new: Box<[FileEntryDiff]>) -> Box<[FileEntryDiff]> {
+fn merge_file_diffs(old: Vec<FileEntryDiff>, new: Vec<FileEntryDiff>) -> Vec<FileEntryDiff> {
     let mut is_new_arr = vec![false; old.len()];
     is_new_arr.extend(vec![true; new.len()]);
     
@@ -514,7 +514,7 @@ fn merge_file_diffs(old: Box<[FileEntryDiff]>, new: Box<[FileEntryDiff]>) -> Box
         ret.resize(new_len, ret[0].clone());
     }
 
-    return ret.into_boxed_slice();
+    return ret;
 }
 
 fn merge_sorted_vec_duplicates<T: Clone>(arr: &mut Vec::<T>, is_dup: fn(a: &T, b: &T) -> bool, merge_elems: fn(old: T, new: T) -> Option<T>) -> usize {

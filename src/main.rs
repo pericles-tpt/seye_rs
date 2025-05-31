@@ -7,12 +7,6 @@ mod utility;
 
 extern crate libc;
 
-use std::num::ParseIntError;
-use std::path::PathBuf;
-use std::env;
-use std::string::ParseError;
-use std::time::SystemTime;
-
 const DEFAULT_NUM_THREADS: usize    = 84;
 const DEFAULT_FD_LIMIT: usize       = 2048;
 const DEFAULT_MIN_DIFF_BYTES: usize = 50 * utility::MEGABYTE;
@@ -23,8 +17,8 @@ struct Config {
     min_diff_bytes: usize,
     show_perf_info: bool,
     show_moved_files: bool,
-    maybe_start_report_time: Option<SystemTime>,
-    maybe_end_report_time: Option<SystemTime>
+    maybe_start_report_time: Option<std::time::SystemTime>,
+    maybe_end_report_time: Option<std::time::SystemTime>
 }
 
 fn main() {
@@ -38,7 +32,7 @@ fn main() {
         maybe_end_report_time:   None,
     };
 
-    let args: Vec<String> = env::args().collect();
+    let args: Vec<String> = std::env::args().collect();
     if args.len() <= 1 || args[0].len() == 0 {
         eprintln!("no arguments provided, for a list of commands add the --help argument");
         return;
@@ -47,7 +41,6 @@ fn main() {
     let is_root  = unsafe { libc::geteuid() == 0 };
     let cmd      = args[1].as_str();
     let params: Vec<_> = args.iter().skip(2).collect();
-    let valid_commands_options = vec!["-p", "-md", "-t", "-fdl"];
     match cmd {
         "scan" => {
             let mut is_root_msg = "NOT ";
@@ -166,12 +159,9 @@ fn main() {
                 eprintln!("failed to check if 'su' path exists: {:?}", su_exists.err());
                 return;
             }
-            if !su_exists.unwrap() {
-                let res = std::fs::create_dir(&su_path);
-                if res.is_err() {
-                    eprintln!("failed to create 'su' path: {:?}", res.err());
-                    return;
-                }
+            if is_root && !su_exists.unwrap() {
+                eprintln!("no 'su' records exist for path: {:?}", output_pb);
+                return;
             }
             if is_root {
                 output_pb = su_path;
@@ -189,19 +179,19 @@ fn main() {
             print_help_text();
         }
         _ => {
-            eprintln!("invalid command '{}' provided, must be one of: {}", cmd, valid_commands_options.join(", "));
+            eprintln!("invalid command '{}' provided, must be one of: {}", cmd, vec!["scan", "report", "--help"].join(", "));
             return;
         }
     }
     return;
 }
 
-fn validate_get_pathbuf(p: &String) -> std::io::Result<PathBuf> {
+fn validate_get_pathbuf(p: &String) -> std::io::Result<std::path::PathBuf> {
     let exists = std::fs::exists(p)?;
     if !exists {
         return Err(std::io::Error::new(std::io::ErrorKind::NotFound, format!("provided path '{}', does not exist", p)));
     }
-    return Ok(PathBuf::from(&p));
+    return Ok(std::path::PathBuf::from(&p));
 }
 
 fn eval_optional_args(cmd: &str, args: Vec<&&String>, cfg: &mut Config) -> std::io::Result<()> {    
@@ -250,14 +240,14 @@ fn eval_optional_args(cmd: &str, args: Vec<&&String>, cfg: &mut Config) -> std::
                         }
                     }
                     "-t" => {
-                        let maybe_threads: Result<usize, ParseIntError> = args[i].parse();
-                        if maybe_threads.is_err() || maybe_threads.clone().unwrap() < 1 {
-                            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid thread argument, must be a non-negative integer"));
+                        let maybe_threads: Result<usize, std::num::ParseIntError> = args[i].parse();
+                        if maybe_threads.is_err() || maybe_threads.clone().unwrap() < 2 {
+                            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid thread argument, must be at least 2"));
                         }
                         cfg.num_threads = maybe_threads.unwrap();
                     }
                     "-fdl" => {
-                        let maybe_file_dir_limit: Result<usize, ParseIntError> = args[i].parse();
+                        let maybe_file_dir_limit: Result<usize, std::num::ParseIntError> = args[i].parse();
                         if maybe_file_dir_limit.is_err() || maybe_file_dir_limit.clone().unwrap() < 1 {
                             return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid thread add dir limit argument, must be a non-negative integer"));
                         }
@@ -290,7 +280,7 @@ fn eval_optional_args(cmd: &str, args: Vec<&&String>, cfg: &mut Config) -> std::
                 }
                 match a {
                     "--start-report" => {
-                        let maybe_start_report: Result<String, ParseError> = args[i].parse();
+                        let maybe_start_report: Result<String, std::string::ParseError> = args[i].parse();
                         if maybe_start_report.is_err() {
                             return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid start report argument, must be an ISO 8601 datetime without timezone"));
                         }
@@ -298,10 +288,10 @@ fn eval_optional_args(cmd: &str, args: Vec<&&String>, cfg: &mut Config) -> std::
                         if maybe_datetime.is_err() {
                             return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid start report argument, must be an ISO 8601 datetime without timezone"));
                         }
-                        cfg.maybe_start_report_time = Some(SystemTime::from(maybe_datetime.unwrap()));
+                        cfg.maybe_start_report_time = Some(std::time::SystemTime::from(maybe_datetime.unwrap()));
                     }
                     "--end-report" => {
-                        let maybe_end_report: Result<String, ParseError> = args[i].parse();                    
+                        let maybe_end_report: Result<String, std::string::ParseError> = args[i].parse();                    
                         if maybe_end_report.is_err() {
                             return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid end report argument, must be an ISO 8601 datetime without timezone"));
                         }
@@ -309,7 +299,7 @@ fn eval_optional_args(cmd: &str, args: Vec<&&String>, cfg: &mut Config) -> std::
                         if maybe_datetime.is_err() {
                             return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid end report argument, must be an ISO 8601 datetime without timezone"));
                         }
-                        cfg.maybe_end_report_time = Some(SystemTime::from(maybe_datetime.unwrap()));
+                        cfg.maybe_end_report_time = Some(std::time::SystemTime::from(maybe_datetime.unwrap()));
                     }
                     _ => {
                         if before_directory_args {
