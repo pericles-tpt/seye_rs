@@ -21,10 +21,7 @@ struct Config {
     num_threads: usize,
     file_dir_limit: usize,
     min_diff_bytes: usize,
-    // scan_hidden: bool,
     show_perf_info: bool,
-    // sorted: bool,
-    move_depth_threshold: i32,
     show_moved_files: bool,
     maybe_start_report_time: Option<SystemTime>,
     maybe_end_report_time: Option<SystemTime>
@@ -35,10 +32,7 @@ fn main() {
         num_threads:             DEFAULT_NUM_THREADS,
         file_dir_limit:          DEFAULT_FD_LIMIT,
         min_diff_bytes:          DEFAULT_MIN_DIFF_BYTES,
-        // scan_hidden:          true,
         show_perf_info:          false,
-        // sorted:               false,
-        move_depth_threshold:    0,
         show_moved_files:        false,
         maybe_start_report_time: None,
         maybe_end_report_time:   None,
@@ -49,9 +43,6 @@ fn main() {
         eprintln!("no arguments provided, for a list of commands add the --help argument");
         return;
     }
-
-    // TODO: This is just here to silence a compiler warning, remove this and come up with a better solution
-    let _ = utility::get_cwd();
 
     let is_root  = unsafe { libc::geteuid() == 0 };
     let cmd      = args[1].as_str();
@@ -215,7 +206,7 @@ fn validate_get_pathbuf(p: &String) -> std::io::Result<PathBuf> {
 
 fn eval_optional_args(cmd: &str, args: Vec<&&String>, cfg: &mut Config) -> std::io::Result<()> {    
     let mut i = 0;
-    let valid_command_options = vec!["-p", "-md", "-t", "-fdl", "-mvd", "-mvs", "--start-report", "--end-report"];
+    let valid_command_options = vec!["-p", "-md", "-t", "-fdl", "-mvs", "--start-report", "--end-report"];
     let local_tz_offset_secs = chrono::Local::now().offset().local_minus_utc();
     while i < args.len() {
         let before_directory_args = i < args.len() - 2;
@@ -298,13 +289,6 @@ fn eval_optional_args(cmd: &str, args: Vec<&&String>, cfg: &mut Config) -> std::
                     return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("missing additional argument for '{}' flag", a)));
                 }
                 match a {
-                    "-mvd" => {
-                        let maybe_move_depth_threshold: Result<i32, ParseIntError> = args[i].parse();
-                        if maybe_move_depth_threshold.is_err() {
-                            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid move depth threshold argument, must be a non-negative integer"));
-                        }
-                        cfg.move_depth_threshold = maybe_move_depth_threshold.unwrap();
-                    }
                     "--start-report" => {
                         let maybe_start_report: Result<String, ParseError> = args[i].parse();
                         if maybe_start_report.is_err() {
@@ -346,7 +330,7 @@ fn eval_optional_args(cmd: &str, args: Vec<&&String>, cfg: &mut Config) -> std::
 }
 
 fn print_help_text() {
-    println!("Storage eye, scans for items in your filesystem. It (mostly) performs best with NO optional args.
+    println!("Storage eye, identifies changes in disk usage and moved files in a target directory through scanning over time
 
 Usage: seye scan [options] [pattern] [path]
        seye report [options] [pattern] [path]
@@ -360,12 +344,6 @@ Scan Arguments:
     -t   <num>            (default:    {})  Specify the number of threads, MUST BE >= 2
     -fdl <num>            (default:  {})  Specify the maximum 'files + dirs' to traverse before returning results from each thread
 Report Arguments:
-    -mvd <num>            (default:     0)  Specifies the maximum directory depth difference for two matching entries in different locations to be
-                                            classified as a MOVE, otherwise they're treated as separate REMOVEs and ADDs
-                                            e.g. In the following case an `-mvd` value >= 3 will classify this as a MOVE
-                                                 a:    4     3    2   1     0            4     3    2   1     0
-                                                 a: /jumps/over/the/lazy/dog.txt, b: /jumps/under/the/lazy/dog.txt
-
     -mvs                                    Show moved files in the report output (even though the size of a MOVE is 0B)
 
     --start-report        (default: first)  Specifies the earliest diff that will be included in the report (format: 2025-05-05T10:00:00, uses system timezone)

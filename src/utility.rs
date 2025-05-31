@@ -59,18 +59,6 @@ pub fn get_bytes_from_arg(a: &String) -> std::io::Result<usize> {
     Ok(ret)
 }
 
-pub fn get_cwd () -> PathBuf {
-    let wd_or_err = std::env::current_dir();
-    match wd_or_err {
-        Ok(wd) => {
-            return wd;
-        }
-        Err(e) => {
-            panic!("error getting cwd: {}", e);
-        }
-    }
-}
-
 pub fn collect_from_root(
     root: PathBuf, 
     skip_set: HashSet<PathBuf>,
