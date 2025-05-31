@@ -6,8 +6,8 @@ pub enum DiffType {
     Add,
     Remove,
     Modify,
-    Move,
-    // TODO: Apply special rules for `Move` on `FileEntry` and add `md5` property to `FileEntry` to support it
+    MoveDir,
+    // TODO: Add `MoveFile` type and add `md5` property to `FileEntry` to support it
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]

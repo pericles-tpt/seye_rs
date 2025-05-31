@@ -77,10 +77,10 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
 
     // TODO: This is VERY dumb, there should be a faster way to do this
     let mut not_move_diffs: Vec<CDirEntryDiff> = combined_diffs.diffs.clone().into_iter().filter(|el| {
-        return el.diff_type != DiffType::Move
+        return el.diff_type != DiffType::MoveDir
     }).collect();
     let move_diffs: Vec<CDirEntryDiff> = combined_diffs.diffs.into_iter().filter(|el| {
-        return el.diff_type == DiffType::Move
+        return el.diff_type == DiffType::MoveDir
     }).collect();
 
     let res = add_diffs_to_items::<CDirEntry, CDirEntryDiff>(&mut initial_scan, &mut not_move_diffs, |a, b| {

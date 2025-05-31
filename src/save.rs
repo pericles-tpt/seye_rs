@@ -162,7 +162,7 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, min_diff_bytes: usize) -
                             size_here: 0,
                             size_below: 0,
                             
-                            diff_type: diff::DiffType::Move,
+                            diff_type: diff::DiffType::MoveDir,
                             files: vec![],
                             symlinks: vec![],
                         };
@@ -213,7 +213,7 @@ pub fn diff_saves(o: Vec<CDirEntry>, n: Vec<CDirEntry>, min_diff_bytes: usize) -
                             size_here: 0,
                             size_below: 0,
                             
-                            diff_type: diff::DiffType::Move,
+                            diff_type: diff::DiffType::MoveDir,
                             files: vec![],
                             symlinks: vec![],
                         };

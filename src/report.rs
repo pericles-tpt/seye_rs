@@ -44,7 +44,7 @@ pub fn report_changes(target_path: PathBuf, output_path: PathBuf, cfg: Config) -
     for i in 0..limit {
         let mut t = format!("{:?}",combined_diffs.diffs[i].diff_type).to_ascii_uppercase();
         let _ = t.split_off(3);
-        if cfg.show_moved_files && combined_diffs.diffs[i].diff_type == diff::DiffType::Move {
+        if cfg.show_moved_files && combined_diffs.diffs[i].diff_type == diff::DiffType::MoveDir {
             let maybe_to_path = combined_diffs.move_to_paths.get(&combined_diffs.diffs[i].p);
             if maybe_to_path.is_some() {
                 println!("{}: {:?} -> {:?} ({})", t, combined_diffs.diffs[i].p, maybe_to_path.unwrap(), utility::get_shorthand_file_size(combined_diffs.diffs[i].size_here + combined_diffs.diffs[i].size_below));
