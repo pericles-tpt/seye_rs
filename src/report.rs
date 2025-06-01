@@ -1,30 +1,26 @@
-use std::{cmp::Ordering, collections::HashMap, io::Error, path::PathBuf};
-use crate::{diff::{self, DiffFile}, save, scan, utility, Config};
+use std::{cmp::Ordering, fs::exists, io::Error, path::PathBuf};
+use crate::{diff::{self, DiffEntry}, save::{self, read_diff_file}, scan::add_combined_diffs, utility, Config};
 
 pub fn report_changes(target_path: PathBuf, output_path: PathBuf, cfg: Config) -> std::io::Result<()> {
-    let save_file_data = save::get_hash_iteration_count_from_file_names(&target_path, output_path.to_path_buf());
-    let path_hash = save_file_data.0;
+    let root_path_hash = save::get_hash_from_root_path(&target_path);
     let mut path_to_initial = output_path.clone();
-    path_to_initial.push(format!("{}_initial", path_hash));
+    path_to_initial.push(format!("{}_initial", root_path_hash));
 
-    let iteration_count = save_file_data.1;
-    let curr_is_initial_scan = iteration_count < 0;
-    if curr_is_initial_scan {
+    let mut path_to_diff = output_path.clone();
+    path_to_diff.push(format!("{}_diffs", root_path_hash));
+    let diff_exists = exists(&path_to_diff)?;
+    if !diff_exists {
         return Err(std::io::Error::new(std::io::ErrorKind::Other, "No diffs found, run a scan first"))
     }
 
-    let mut combined_diffs: DiffFile = DiffFile { diffs: vec![], move_to_paths: HashMap::new() };
-    if iteration_count > -1 {
-        let mut diff_prefix = output_path;
-        diff_prefix.push("tmp");
-        diff_prefix.set_file_name(format!("{}_diff", path_hash));
-        let res: Result<DiffFile, Error> = scan::add_combined_diffs(&diff_prefix, iteration_count as u16, cfg.maybe_start_report_time, cfg.maybe_end_report_time);
-        match res {
-            Ok(ds) => {
-                combined_diffs = ds;
-            }
-            Err(e) => {return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("failed to add combined diffs to scan: {}", e)))}
+    let mut combined_diffs: DiffEntry;
+    let diff_file = read_diff_file(&path_to_diff)?;
+    let res: Result<DiffEntry, Error> = add_combined_diffs(&diff_file, cfg.maybe_start_report_time, cfg.maybe_end_report_time);
+    match res {
+        Ok(ds) => {
+            combined_diffs = ds;
         }
+        Err(e) => {return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("failed to add combined diffs to scan: {}", e)))}
     }
 
     if combined_diffs.diffs.len() == 0 {
