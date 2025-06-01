@@ -17,6 +17,7 @@ struct Config {
     min_diff_bytes: usize,
     show_perf_info: bool,
     show_moved_files: bool,
+    cache_merged_diff: bool,
     maybe_start_report_time: Option<std::time::SystemTime>,
     maybe_end_report_time: Option<std::time::SystemTime>
 }
@@ -28,6 +29,7 @@ fn main() {
         min_diff_bytes:          DEFAULT_MIN_DIFF_BYTES,
         show_perf_info:          false,
         show_moved_files:        false,
+        cache_merged_diff:       false,
         maybe_start_report_time: None,
         maybe_end_report_time:   None,
     };
@@ -100,7 +102,7 @@ fn main() {
             }
 
             let bef = std::time::Instant::now();
-            let res = scan::scan(target_pb, output_pb, cfg.min_diff_bytes, cfg.num_threads, cfg.file_dir_limit);
+            let res = scan::scan(target_pb, output_pb, cfg.min_diff_bytes, cfg.num_threads, cfg.file_dir_limit, cfg.cache_merged_diff);
             let took = bef.elapsed();
             match res {
                 Ok((num_files, num_dirs)) => {
@@ -190,7 +192,7 @@ fn validate_get_pathbuf(p: &String) -> std::io::Result<std::path::PathBuf> {
 
 fn eval_optional_args(cmd: &str, args: Vec<&&String>, cfg: &mut Config) -> std::io::Result<()> {    
     let mut i = 0;
-    let valid_command_options = vec!["-p", "-md", "-t", "-fdl", "-mvs", "--start-report", "--end-report"];
+    let valid_command_options = vec!["-p", "-md", "-t", "-fdl", "-mvs", "--start-report", "--end-report", "--cache-merged-diff"];
     let local_tz_offset_secs = chrono::Local::now().offset().local_minus_utc();
     while i < args.len() {
         let before_directory_args = i < args.len() - 2;
@@ -207,6 +209,9 @@ fn eval_optional_args(cmd: &str, args: Vec<&&String>, cfg: &mut Config) -> std::
                 match a {
                     "-p" => {
                         cfg.show_perf_info = true;
+                    }
+                    "--cache-merged-diff" => {
+                        cfg.cache_merged_diff = true;
                     }
                     _ => {is_no_val_opt = false;}
                 }

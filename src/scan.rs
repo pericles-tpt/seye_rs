@@ -4,9 +4,7 @@ use rayon::{slice::ParallelSliceMut};
 use crate::{diff::{add_diffs_to_items, get_entry_from_dir_diff, merge_dir_diff_to_entry, CDirEntryDiff, DiffFile, DiffType}, utility::collect_from_root};
 use crate::{save::{add_dir_diffs, diff_saves, get_hash_iteration_count_from_file_names, read_diff_file, read_save_file}, walk::CDirEntry};
 
-pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, min_diff_bytes: usize, num_threads: usize, thread_add_dir_limit: usize) -> Result<(usize, usize), Error> {
-    let save_file_data = get_hash_iteration_count_from_file_names(&target_path, output_path.to_path_buf());
-    let path_hash = save_file_data.0;
+pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, min_diff_bytes: usize, num_threads: usize, thread_add_dir_limit: usize, cache_merged_diffs: bool) -> Result<(usize, usize), Error> {
     let mut path_to_initial = output_path.clone();
     path_to_initial.push(format!("{}_initial", path_hash));
 
