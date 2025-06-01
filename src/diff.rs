@@ -38,8 +38,14 @@ pub struct TDiff {
     pub ns_diff: i128,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct DiffFile {
+    pub has_merged_diff: bool,
+    pub timestamps: Vec<std::time::SystemTime>,
+    pub entries: Vec<DiffEntry>,
+}
+#[derive(serde::Serialize, serde::Deserialize, Default, Clone, Debug)]
+pub struct DiffEntry {
     pub diffs: Vec<CDirEntryDiff>,
     pub move_to_paths: std::collections::HashMap<std::path::PathBuf, std::path::PathBuf>,
 }
