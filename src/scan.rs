@@ -50,8 +50,6 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
         return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("Failed to get size for provided file path")))
     }
 
-    // Get ENTIRE file, chunk-by-chunk
-    // TODO: In future should fetch and process one chunk at a time instead of stitching them all together here
     let mut initial_scan: Vec<CDirEntry>;
     let maybe_last_scan = read_save_file(path_to_initial);
     match maybe_last_scan {
@@ -178,7 +176,6 @@ pub fn add_combined_diffs(diff_file: &DiffFile, maybe_start_diff_time: Option<Sy
 pub fn bubble_up_props(scan: &mut Vec<CDirEntry>, pm: &mut HashMap<std::path::PathBuf, usize>) {
     // Traverse scan in reverse to "bubble up" properties
     if scan.len() > 0 {
-        // let mut_dt = &mut curr_scan;
         for i in 0..scan.len() {
             // Calculate memory usage for self
             let curr_idx = scan.len() - 1 - i;

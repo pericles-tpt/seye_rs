@@ -332,6 +332,8 @@ Scan Arguments:
     
     -t   <num>            (default:    {})  Specify the number of threads, MUST BE >= 2
     -fdl <num>            (default:  {})  Specify the maximum 'files + dirs' to traverse before returning results from each thread
+
+    --cache-merged-diff                     Keep a copy of all the diffs merged together in the `diffs` file (increases performance and `diffs` size)
 Report Arguments:
     -mvs                                    Show moved files in the report output (even though the size of a MOVE is 0B)
 

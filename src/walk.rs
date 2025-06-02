@@ -69,14 +69,6 @@ pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, _skip_set: &
         for ent in entries {
             let Ok(val) = ent else { continue };
             let Ok(ft) = val.file_type() else { continue };
-            // NOTE: This was commented out as it has a BIG impact on performance
-            // if skip_set.contains(&val.path()) {
-            //     continue;
-            // }
-    
-            // if IGNORE_LIST.contains(filename.as_os_str()) {
-            //     continue 
-            // }
                 
             if ft.is_dir() {
                 dir_q.push(val.path());
