@@ -1,6 +1,6 @@
-use std::{cmp::Ordering, collections::HashMap, ffi::OsString, fs::File, hash::{DefaultHasher, Hasher}, io::BufReader, os::unix::ffi::OsStrExt, path::PathBuf, time::{SystemTime, UNIX_EPOCH}, usize};
+use std::{cmp::Ordering, collections::{HashMap, HashSet}, ffi::OsString, fs::{exists, File}, hash::{DefaultHasher, Hasher}, io::BufReader, os::unix::ffi::OsStrExt, path::PathBuf, time::{SystemTime, UNIX_EPOCH}, usize};
 use std::io;
-
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use crate::{diff::{self, CDirEntryDiff, DiffEntry, DiffFile, DiffType, FileEntryDiff, TDiff}, walk::{CDirEntry, FileEntry}};
 
 const _START_VECTOR_BYTES: u64 = 8;
@@ -56,6 +56,14 @@ pub fn diff_saves(mut original_file: DiffFile, o: Vec<CDirEntry>, n: Vec<CDirEnt
     let mut remove_hash_idxs: HashMap<[u8; 16], usize> = HashMap::new();
     let mut add_hash_idxs: HashMap<[u8; 16], usize> = HashMap::new();
     let mut moved_paths: Vec<PathBuf> = combined_diffs.move_to_paths.clone().into_keys().collect();
+    let mut remadd_paths: Vec<PathBuf> = vec![];
+    let mut remadd_paths_hs = HashSet::new();
+    for d in &combined_diffs.diffs {
+        if d.diff_type == DiffType::Remove || d.diff_type == DiffType::Add {
+            remadd_paths.push(d.p.clone());
+            remadd_paths_hs.insert(d.p.clone());
+        }
+    }
     while oi < o.len() || ni < n.len() {
         let old_left = oi < o.len();
         if old_left {
@@ -139,7 +147,9 @@ pub fn diff_saves(mut original_file: DiffFile, o: Vec<CDirEntry>, n: Vec<CDirEnt
                 
                     files: get_file_diffs(Vec::new(), new.files.to_vec(),),
                     symlinks: get_file_diffs(Vec::new(), new.symlinks.to_vec()),
-                })
+                });
+                remadd_paths.push(new.p.clone());
+                remadd_paths_hs.insert(new.p.clone());
             },
             DiffType::Remove => {
                 let maybe_move_match = add_hash_idxs.get(&old.md5);
@@ -190,7 +200,9 @@ pub fn diff_saves(mut original_file: DiffFile, o: Vec<CDirEntry>, n: Vec<CDirEnt
                 
                     files: get_file_diffs(old.files.to_vec(), Vec::new()),
                     symlinks: get_file_diffs(old.symlinks.to_vec(), Vec::new()),
-                })
+                });
+                remadd_paths.push(old.p.clone());
+                remadd_paths_hs.insert(old.p.clone());
             },
             DiffType::Modify => {
                 let maybe_modified_dir_diff = get_maybe_modified_dir_diff(old.clone(), new.clone());
@@ -213,7 +225,13 @@ pub fn diff_saves(mut original_file: DiffFile, o: Vec<CDirEntry>, n: Vec<CDirEnt
 
     // Apply filter given `-md` argument
     new_entry.diffs = new_entry.diffs.into_iter().filter(|it| {
-        return it.diff_type != DiffType::Ignore && (it.diff_type == DiffType::MoveDir || it.size_here.abs() >= min_diff_bytes as i64);
+        return it.diff_type != DiffType::Ignore && 
+            (it.diff_type == DiffType::MoveDir || 
+            (it.diff_type == DiffType::Modify && it.size_here.abs() >= min_diff_bytes as i64) || 
+                ((it.size_below.abs() + it.size_here.abs()) >= min_diff_bytes as i64 && 
+                remadd_paths.par_iter().find_any(|el|{ it.p != **el && it.p.starts_with(el) }).is_none() && 
+                moved_paths.par_iter().find_any(|el|{ it.p != **el && it.p.starts_with(el) }).is_none())
+            )
     }).collect();
 
     let changed_caching = original_file.has_merged_diff != cache_merged_diffs;
@@ -237,6 +255,40 @@ pub fn diff_saves(mut original_file: DiffFile, o: Vec<CDirEntry>, n: Vec<CDirEnt
     if new_entry.diffs.len() > 0 {
         original_file.entries.push(new_entry);
         original_file.timestamps.push(SystemTime::now());
+    }
+
+    // Cleanup: If the `from` or `to` path of `MoveDir` matches an ADD or REMOVE, remove that entry
+    for i in 0..original_file.entries.len() {
+        let contains_moves = original_file.entries[i].move_to_paths.len() > 0;
+        if !contains_moves {
+            continue;
+        }
+
+        let ent = original_file.entries[i].clone();
+        for j in 0..ent.diffs.len() {
+            let curr = &ent.diffs[j];
+            if curr.diff_type == DiffType::MoveDir {
+                let from = &curr.p;
+                let to = &ent.move_to_paths[from];
+
+                let mut remove = false;
+                if remadd_paths_hs.contains(from) || remadd_paths_hs.contains(to) {
+                    remove = true;
+                } else {
+                    let from_exists = exists(from);
+                    let to_exists = exists(to);
+                    if !from_exists.is_err() && !to_exists.is_err() {
+                        if !from_exists.unwrap() && !to_exists.unwrap() {
+                            remove = true;
+                        }
+                    }
+                }
+                if remove {
+                    original_file.entries[i].diffs.remove(j);
+                    original_file.entries[i].move_to_paths.remove(from);
+                }
+            }
+        }
     }
 
     return original_file;
