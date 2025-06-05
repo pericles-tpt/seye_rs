@@ -65,7 +65,7 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
     if diff_exists {
         diff_file = read_diff_file(&path_to_diff)?;
         
-        let res: Result<DiffEntry, Error> = add_combined_diffs(&diff_file, None, None);
+        let res: Result<DiffEntry, Error> = add_combined_diffs(&diff_file, &initial_scan, None, None);
         match res {
             Ok(ds) => {
                 combined_diffs = ds;
@@ -126,7 +126,7 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
     Ok((num_scan_files, num_scan_dirs))
 }
 
-pub fn add_combined_diffs(diff_file: &DiffFile, maybe_start_diff_time: Option<SystemTime>, maybe_end_diff_time: Option<SystemTime>) -> std::io::Result<DiffEntry> {
+pub fn add_combined_diffs(diff_file: &DiffFile, full_scan_entries: &Vec<CDirEntry>, maybe_start_diff_time: Option<SystemTime>, maybe_end_diff_time: Option<SystemTime>) -> std::io::Result<DiffEntry> {
     let mut combined_diffs = DiffEntry { diffs: vec![], move_to_paths: HashMap::new() };
     if diff_file.entries.len() == 0 {
         return Ok(combined_diffs);
@@ -168,7 +168,7 @@ pub fn add_combined_diffs(diff_file: &DiffFile, maybe_start_diff_time: Option<Sy
             end_idx = (diff_file.entries.len() - 1) as i32;
         }
     }
-    combined_diffs = add_dir_diffs(&diff_file, start_idx as usize, end_idx as usize);
+    combined_diffs = add_dir_diffs(&diff_file, &full_scan_entries, start_idx as usize, end_idx as usize);
 
     return Ok(combined_diffs);
 }

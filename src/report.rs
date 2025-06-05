@@ -1,5 +1,5 @@
 use std::{cmp::Ordering, fs::exists, io::Error, path::PathBuf};
-use crate::{diff::{self, DiffEntry}, save::{self, read_diff_file}, scan::add_combined_diffs, utility, Config};
+use crate::{diff::{self, DiffEntry}, save::{self, read_diff_file, read_save_file}, scan::add_combined_diffs, utility, walk::CDirEntry, Config};
 
 pub fn report_changes(target_path: PathBuf, output_path: PathBuf, cfg: Config) -> std::io::Result<()> {
     let root_path_hash = save::get_hash_from_root_path(&target_path);
@@ -13,9 +13,16 @@ pub fn report_changes(target_path: PathBuf, output_path: PathBuf, cfg: Config) -
         return Err(std::io::Error::new(std::io::ErrorKind::Other, "No diffs found, run a scan first"))
     }
 
+    let full_scan_entries: Vec<CDirEntry>;
+    let maybe_last_scan = read_save_file(path_to_initial);
+    match maybe_last_scan {
+        Ok(entries) => {full_scan_entries = entries}
+        Err(e) => {return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to read entries from file: {}", e)))}
+    }
+
     let mut combined_diffs: DiffEntry;
     let diff_file = read_diff_file(&path_to_diff)?;
-    let res: Result<DiffEntry, Error> = add_combined_diffs(&diff_file, cfg.maybe_start_report_time, cfg.maybe_end_report_time);
+    let res: Result<DiffEntry, Error> = add_combined_diffs(&diff_file, &full_scan_entries, cfg.maybe_start_report_time, cfg.maybe_end_report_time);
     match res {
         Ok(ds) => {
             combined_diffs = ds;
