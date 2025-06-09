@@ -52,10 +52,14 @@ pub fn diff_saves(mut original_file: DiffFile, o: Vec<CDirEntry>, n: Vec<CDirEnt
     let mut ni = 0;
     let mut old = &o[0];
     let mut new = &o[0];
-    let mut add_rem_set: HashSet<PathBuf> = HashSet::from_iter(combined_diffs.clone().diffs.into_iter().filter(|d| {d.diff_type == DiffType::Remove || d.diff_type == DiffType::Add}).map(|d|{d.p}));
     let mut remove_hash_idxs: HashMap<[u8; 16], usize> = HashMap::new();
     let mut add_hash_idxs: HashMap<[u8; 16], usize> = HashMap::new();
     let mut moved_paths: Vec<PathBuf> = combined_diffs.move_to_paths.clone().into_keys().collect();
+    
+    let mut add_rem_set: HashSet<PathBuf> = HashSet::from_iter(combined_diffs.clone().diffs.into_iter().filter(|d| {d.diff_type == DiffType::Remove || d.diff_type == DiffType::Add}).map(|d|{d.p}));
+    let moved_to_paths: Vec<PathBuf> = combined_diffs.move_to_paths.clone().into_values().collect();
+    add_rem_set.extend(moved_to_paths.clone());
+
     while oi < o.len() || ni < n.len() {
         let old_left = oi < o.len();
         if old_left {
