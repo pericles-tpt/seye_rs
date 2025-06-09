@@ -91,6 +91,7 @@ pub fn diff_saves(mut original_file: DiffFile, o: Vec<CDirEntry>, n: Vec<CDirEnt
         let diff_passes_threshold;
         match diff_type {
             DiffType::Add => {
+                add_rem_set.insert(new.p.clone());
                 let maybe_move_match = remove_hash_idxs.get(&new.md5);
                 if maybe_move_match.is_some() {
                     let update_idx = maybe_move_match.unwrap();
@@ -122,7 +123,6 @@ pub fn diff_saves(mut original_file: DiffFile, o: Vec<CDirEntry>, n: Vec<CDirEnt
                     continue;
                 }
                 
-                add_rem_set.insert(new.p.clone());
                 if new.p.parent().is_some() && add_rem_set.contains(new.p.parent().unwrap()) {
                     oi += 1;
                     ni += 1;
@@ -147,6 +147,7 @@ pub fn diff_saves(mut original_file: DiffFile, o: Vec<CDirEntry>, n: Vec<CDirEnt
                 });
             },
             DiffType::Remove => {
+                add_rem_set.insert(old.p.clone());
                 let maybe_move_match = add_hash_idxs.get(&old.md5);
                 if maybe_move_match.is_some() {
                     let update_idx = maybe_move_match.unwrap();
@@ -178,7 +179,6 @@ pub fn diff_saves(mut original_file: DiffFile, o: Vec<CDirEntry>, n: Vec<CDirEnt
                     continue;
                 }
 
-                add_rem_set.insert(old.p.clone());
                 if old.p.parent().is_some() && add_rem_set.contains(old.p.parent().unwrap()) {
                     oi += 1;
                     ni += 1;
