@@ -411,21 +411,22 @@ pub fn add_dir_diffs(df: &DiffFile, full_scan_entries: &Vec<CDirEntry>, start_id
         let to_paths_dup = ret.move_to_paths.clone();
 
         for d_idx in 0..curr.diffs.len() {
-            let new_diff = &curr.diffs[d_idx];
-            match new_diff.diff_type {
+            let new_diff_type = &curr.diffs[d_idx].diff_type.clone();
+            let new_diff_path = &curr.diffs[d_idx].p.clone();
+            match new_diff_type {
                 DiffType::Add => 'add: {
                     // 1. A -> B, ADD: A => MOV -> MOD(A), ADD(B) (dup of A w/ different path)
-                    let maybe_to_path = to_paths_dup.get(&new_diff.p);
+                    let maybe_to_path = to_paths_dup.get(new_diff_path);
                     if maybe_to_path.is_some() {
-                        let maybe_entry_idx = path_entry_lookup.get(&new_diff.p);
+                        let maybe_entry_idx = path_entry_lookup.get(new_diff_path);
                         if maybe_entry_idx.is_none() {
                             break 'add;
                         }
                         let old_a = &full_scan_entries[*maybe_entry_idx.unwrap()];
-                        ret.move_to_paths.remove(&new_diff.p);
+                        ret.move_to_paths.remove(new_diff_path);
 
                         // MOD A
-                        let maybe_a_diff = get_maybe_modified_dir_diff(old_a.clone(), get_entry_from_dir_diff(new_diff.clone()));
+                        let maybe_a_diff = get_maybe_modified_dir_diff(old_a.clone(), get_entry_from_dir_diff(curr.diffs[d_idx].clone()));
                         if maybe_a_diff.is_some() {
                             curr.diffs[d_idx] = maybe_a_diff.unwrap();
                         }
@@ -453,7 +454,7 @@ pub fn add_dir_diffs(df: &DiffFile, full_scan_entries: &Vec<CDirEntry>, start_id
                 },
                 DiffType::Remove => 'rem: {
                     // 2. A -> B, REM: B => MOV -> REM(B)
-                    let maybe_from_path = rev_move_to_paths.get(&new_diff.p);
+                    let maybe_from_path = rev_move_to_paths.get(new_diff_path);
                     if maybe_from_path.is_some() {
                         let maybe_entry_idx = path_entry_lookup.get(maybe_from_path.unwrap());
                         if maybe_entry_idx.is_none() {
@@ -462,7 +463,7 @@ pub fn add_dir_diffs(df: &DiffFile, full_scan_entries: &Vec<CDirEntry>, start_id
                         ret.move_to_paths.remove(maybe_from_path.unwrap());
                         let old_a = &full_scan_entries[*maybe_entry_idx.unwrap()];
                         // REM A
-                        ret.diffs.push(CDirEntryDiff{
+                        curr.diffs[d_idx] = CDirEntryDiff{
                             diff_type: DiffType::Remove,
                             
                             p: old_a.p.clone(),
@@ -477,10 +478,10 @@ pub fn add_dir_diffs(df: &DiffFile, full_scan_entries: &Vec<CDirEntry>, start_id
                         
                             files: get_file_diffs(old_a.files.to_vec(), Vec::new()),
                             symlinks: get_file_diffs(old_a.symlinks.to_vec(), Vec::new()),
-                        });
-                        is_new_arr.push(true);
+                        };
+                        is_new_arr[d_idx] = true;
                     }
-                    rev_move_to_paths.remove(&new_diff.p);
+                    rev_move_to_paths.remove(new_diff_path);
                 },
                 _ => {}
             }
