@@ -1,6 +1,6 @@
 use std::fs::metadata;
 use std::{ffi::OsString, fs::DirEntry, os::unix::fs::MetadataExt, time::SystemTime};
-use std::{collections::{HashMap, HashSet}, fs::{symlink_metadata, Metadata}, path::PathBuf};
+use std::{collections::HashMap, fs::{symlink_metadata, Metadata}, path::PathBuf};
 use serde::{Deserialize, Serialize};
 use crate::utility;
 
@@ -37,7 +37,7 @@ pub struct CDirEntry {
     pub symlinks: Vec<FileEntry>,
 }
 
-pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, _skip_set: &HashSet<PathBuf>, other_entries: &mut Vec<CDirEntry>, thread_readdir_limit: usize) -> std::io::Result<Vec<PathBuf>> {
+pub fn walk_collect_until_limit(some: &mut Vec<std::path::PathBuf>, other_entries: &mut Vec<CDirEntry>, thread_readdir_limit: usize) -> std::io::Result<Vec<PathBuf>> {
     let mut d_idx = 0;
     let mut f_idx = 0;
     

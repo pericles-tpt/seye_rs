@@ -1,38 +1,37 @@
-use std::{collections::{HashMap, HashSet}, fs::{exists, File}, io::{BufWriter, Error}, os::unix::fs::MetadataExt, time::SystemTime};
+use std::{collections::HashMap, fs::{exists, File}, io::{BufWriter, Error}, time::SystemTime};
 use rayon::{slice::ParallelSliceMut};
 
-use crate::{diff::{add_diffs_to_items, get_entry_from_dir_diff, merge_dir_diff_to_entry, CDirEntryDiff, DiffEntry, DiffFile, DiffType}, save::get_hash_from_root_path, utility::collect_from_root};
+use crate::{diff::{add_diffs_to_items, get_entry_from_dir_diff, ignore_dir_entry, merge_dir_diff_to_entry, CDirEntryDiff, DiffEntry, DiffFile}, save::get_hash_from_root_path, utility::collect_from_root};
 use crate::{save::{add_dir_diffs, diff_saves, read_diff_file, read_save_file}, walk::CDirEntry};
 
 pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, min_diff_bytes: usize, num_threads: usize, thread_add_dir_limit: usize, cache_merged_diffs: bool) -> Result<(usize, usize), Error> {
     let root_path_hash = get_hash_from_root_path(&target_path);
     let mut path_to_initial = output_path.clone();
     path_to_initial.push(format!("{}_initial", root_path_hash));
-
-    let skip_set: HashSet<std::path::PathBuf> = HashSet::from_iter(vec![output_path.clone()]);
-    let mut curr_scan;
-    let mut pm: HashMap<std::path::PathBuf, usize> = HashMap::new();
-
-    let maybe_curr_scan = collect_from_root(target_path, skip_set, num_threads, thread_add_dir_limit);
+    let mut path_to_diff = output_path.clone();
+    path_to_diff.push(format!("{}_diffs", root_path_hash));
+    
+    let maybe_curr_scan = collect_from_root(target_path, num_threads, thread_add_dir_limit);
     if maybe_curr_scan.is_err() {
         return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to do MT walk: {:?}", maybe_curr_scan.err())))
     }
-    curr_scan = maybe_curr_scan.unwrap();
+    let mut curr_scan = maybe_curr_scan.unwrap();
     curr_scan.par_sort_by(|a, b| {
         return a.p.cmp(&b.p);
     });
-
+    
     // Populate parent map
+    let mut parent_map: HashMap<std::path::PathBuf, usize> = HashMap::new();
     for ci in 0..curr_scan.len() {
         let p = &curr_scan[ci].p;
-        pm.insert(p.clone(), ci);
+        parent_map.insert(p.clone(), ci);
     }
 
     // Traverse scan in reverse to "bubble up" properties
-    bubble_up_props(&mut curr_scan, &mut pm);
+    bubble_up_props(&mut curr_scan, &mut parent_map);
     
-    let initial_exists = exists(&path_to_initial)?;
-    if !initial_exists {
+    let initial_scan_exists = exists(&path_to_initial)?;
+    if !initial_scan_exists {
         let f  = File::create(path_to_initial)?;
         let writer: BufWriter<File> = BufWriter::new(f);
         bincode::serialize_into(writer, &curr_scan).expect("failed to seralise");
@@ -41,21 +40,11 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
     }
 
     // Open file
-    let f = File::open(&path_to_initial)?;
-    let mut f_sz= 0;
-    if let Ok(md) = f.metadata() {
-        f_sz = md.size();
-    }
-    if f_sz == 0 {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("Failed to get size for provided file path")))
-    }
-
-    let mut initial_scan: Vec<CDirEntry>;
     let maybe_last_scan = read_save_file(path_to_initial);
-    match maybe_last_scan {
-        Ok(entries) => {initial_scan = entries}
-        Err(e) => {return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to read entries from file: {}", e)))}
+    if maybe_last_scan.is_err() {
+        return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to read entries from file: {:?}", maybe_last_scan.err())))
     }
+    let mut initial_scan: Vec<CDirEntry> = maybe_last_scan.unwrap();
 
     let mut diff_file: DiffFile = DiffFile { has_merged_diff: true, timestamps: vec![], entries: vec![] };
     let mut combined_diffs: DiffEntry = DiffEntry { diffs: Default::default(), move_to_paths: HashMap::new() };
@@ -64,11 +53,19 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
         diff_file = read_diff_file(&path_to_diff)?;
         
         let res: Result<DiffEntry, Error> = add_combined_diffs(&diff_file, &initial_scan, None, None);
-        match res {
-            Ok(ds) => {
-                combined_diffs = ds;
+        if res.is_err() {
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("failed to add combined diffs to scan: {:?}", res.err())))
+        }
+        combined_diffs = res.unwrap();
+    }
+
+    // Apply "moves" before `add_diffs_to_items`
+    if combined_diffs.move_to_paths.len() > 0 {
+        for i in 0..initial_scan.len() {
+            let maybe_to_path = combined_diffs.move_to_paths.get(&initial_scan[i].p);
+            if maybe_to_path.is_some() {
+                initial_scan[i].p = maybe_to_path.unwrap().to_path_buf();
             }
-            Err(e) => {return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("failed to add combined diffs to scan: {}", e)))}
         }
     }
 

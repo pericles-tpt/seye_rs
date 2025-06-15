@@ -1,4 +1,4 @@
-use std::{collections::HashSet, path::PathBuf};
+use std::path::PathBuf;
 use chrono;
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use crate::walk::{walk_collect_until_limit, CDirEntry};
@@ -61,7 +61,6 @@ pub fn get_bytes_from_arg(a: &String) -> std::io::Result<usize> {
 
 pub fn collect_from_root(
     root: PathBuf, 
-    skip_set: HashSet<PathBuf>,
     num_threads: usize, 
     num_thread_iterations_before_yield: usize,
 ) -> std::io::Result<Vec<CDirEntry>> {
@@ -69,7 +68,7 @@ pub fn collect_from_root(
 
     // Do first pass of thread_*_fn() on root to get multiple items
     let mut initial_dirs = vec![root];
-    let maybe_initial_paths: std::io::Result<Vec<PathBuf>> = walk_collect_until_limit(&mut initial_dirs, &skip_set, &mut res, num_thread_iterations_before_yield);
+    let maybe_initial_paths: std::io::Result<Vec<PathBuf>> = walk_collect_until_limit(&mut initial_dirs,&mut res, num_thread_iterations_before_yield);
     let Ok(mut paths_to_distribute) = maybe_initial_paths else {
         return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to read root path: {:?}", maybe_initial_paths.err())))
     };
@@ -86,7 +85,7 @@ pub fn collect_from_root(
         // Start "walk" on auxiliary threads
         let new_dirs_and_results: (Vec<Vec<PathBuf>>, Vec<Vec<CDirEntry>>) = paths_per_thread.par_iter_mut().map(|p| {
             let mut new_entries = vec![];
-            let Ok(leftover_paths) = walk_collect_until_limit(p, &skip_set, &mut new_entries, num_thread_iterations_before_yield)
+            let Ok(leftover_paths) = walk_collect_until_limit(p, &mut new_entries, num_thread_iterations_before_yield)
             else {
                 return (vec![], vec![]);
             };
