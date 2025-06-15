@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, collections::{HashMap, HashSet}, ffi::OsString, fs::File, hash::{DefaultHasher, Hasher}, io::BufReader, os::unix::ffi::OsStrExt, path::PathBuf, time::{SystemTime, UNIX_EPOCH}, usize};
 use std::io;
-use crate::{diff::{self, get_entry_from_dir_diff, CDirEntryDiff, DiffEntry, DiffFile, DiffType, FileEntryDiff, TDiff}, walk::{CDirEntry, FileEntry}};
+use crate::{diff::{get_entry_from_dir_diff, ignore_dir_entry, CDirEntryDiff, DiffEntry, DiffFile, FileEntryDiff, TDiff, ADD_DT_IDX, MOD_DT_IDX, NUM_DT, REM_DT_IDX}, walk::{CDirEntry, FileEntry}};
 
 const _START_VECTOR_BYTES: u64 = 8;
 
@@ -43,8 +43,8 @@ pub fn diff_saves(mut original_file: DiffFile, o: Vec<CDirEntry>, n: Vec<CDirEnt
         return original_file;
     }
 
-    let mut new_entry = DiffEntry {
-        diffs: vec![],
+    let mut new_entry = DiffEntry {   
+        diffs: Default::default(),
         move_to_paths: HashMap::new(),
     };
 
@@ -54,11 +54,12 @@ pub fn diff_saves(mut original_file: DiffFile, o: Vec<CDirEntry>, n: Vec<CDirEnt
     let mut new = &o[0];
     let mut remove_hash_idxs: HashMap<[u8; 16], usize> = HashMap::new();
     let mut add_hash_idxs: HashMap<[u8; 16], usize> = HashMap::new();
-    let mut moved_paths: Vec<PathBuf> = combined_diffs.move_to_paths.clone().into_keys().collect();
     
-    let mut add_rem_set: HashSet<PathBuf> = HashSet::from_iter(combined_diffs.clone().diffs.into_iter().filter(|d| {d.diff_type == DiffType::Remove || d.diff_type == DiffType::Add}).map(|d|{d.p}));
-    let moved_to_paths: Vec<PathBuf> = combined_diffs.move_to_paths.clone().into_values().collect();
-    add_rem_set.extend(moved_to_paths.clone());
+    let mut add_rem_vec = combined_diffs.diffs[ADD_DT_IDX].clone();
+    add_rem_vec.append(&mut combined_diffs.diffs[REM_DT_IDX].clone());
+    let mut add_rem_set: HashSet<PathBuf> = HashSet::from_iter(add_rem_vec.into_iter().map(|d|{d.p}));
+    let mut moved_paths: Vec<PathBuf> = combined_diffs.move_to_paths.clone().into_values().collect();
+    add_rem_set.extend(moved_paths.clone());
 
     while oi < o.len() || ni < n.len() {
         let old_left = oi < o.len();
@@ -70,53 +71,39 @@ pub fn diff_saves(mut original_file: DiffFile, o: Vec<CDirEntry>, n: Vec<CDirEnt
             new = &n[ni];
         }
 
-        let mut diff_type: DiffType = DiffType::Add; // -> new_left        
+        let mut diff_type: usize = ADD_DT_IDX; // -> new_left        
         if old_left && new_left {
             let old_new_cmp = old.p.cmp(&new.p);
             match old_new_cmp {
                 Ordering::Equal => {
-                    diff_type = DiffType::Modify;
+                    diff_type = MOD_DT_IDX;
                 },
                 Ordering::Less => {
                     // old item removed, NEXT old item *might* match CURRENT new
-                    diff_type = DiffType::Remove;
+                    diff_type = REM_DT_IDX;
                     ni -= 1;
                 },
                 Ordering::Greater => {   
                     // new item added, CURRENT old item *might* match NEXT new 
-                    diff_type = DiffType::Add;
+                    diff_type = ADD_DT_IDX;
                     oi -= 1;
                 }
             }
         } else if old_left {
-            diff_type = DiffType::Remove;
+            diff_type = REM_DT_IDX;
         }
 
         let diff_passes_threshold;
         match diff_type {
-            DiffType::Add => {
+            ADD_DT_IDX => {
                 add_rem_set.insert(new.p.clone());
                 let maybe_move_match = remove_hash_idxs.get(&new.md5);
                 if maybe_move_match.is_some() {
                     let update_idx = maybe_move_match.unwrap();
-                    let old_path = &new_entry.diffs[*update_idx].p.clone();
-                    new_entry.diffs[*update_idx].diff_type = diff::DiffType::Ignore;
+                    let old_path = &new_entry.diffs[REM_DT_IDX][*update_idx].p.clone();
                     if moved_paths.iter().find(|el|{ old_path.starts_with(el) }).is_none() {
-                        new_entry.diffs[*update_idx] = diff::CDirEntryDiff{
-                            p: old_path.to_path_buf(),
-                            t_diff: TDiff { s_diff: 0, ns_diff: 0 },
-                        
-                            files_here: 0,
-                            files_below: 0,
-                            dirs_here: 0,
-                            dirs_below: 0,
-                            size_here: 0,
-                            size_below: 0,
-                            
-                            diff_type: diff::DiffType::MoveDir,
-                            files: vec![],
-                            symlinks: vec![],
-                        };
+                        // TODO: Make it clearer that setting a "default" PathBuf here marks it as ignored
+                        new_entry.diffs[REM_DT_IDX][*update_idx].p = PathBuf::new();
                         new_entry.move_to_paths.insert(old_path.to_path_buf(), new.p.clone());
                         moved_paths.push(old_path.to_path_buf());
                     }
@@ -132,10 +119,8 @@ pub fn diff_saves(mut original_file: DiffFile, o: Vec<CDirEntry>, n: Vec<CDirEnt
                     ni += 1;
                     continue;
                 }
-                add_hash_idxs.insert(new.md5, new_entry.diffs.len());
-                new_entry.diffs.push(CDirEntryDiff{
-                    diff_type: DiffType::Add,
-                    
+                add_hash_idxs.insert(new.md5, new_entry.diffs[ADD_DT_IDX].len());
+                new_entry.diffs[ADD_DT_IDX].push(CDirEntryDiff{                    
                     p: new.p.clone(),
                     t_diff: get_t_diff_from_md(new.md, false),
                 
@@ -150,29 +135,15 @@ pub fn diff_saves(mut original_file: DiffFile, o: Vec<CDirEntry>, n: Vec<CDirEnt
                     symlinks: get_file_diffs(Vec::new(), new.symlinks.to_vec()),
                 });
             },
-            DiffType::Remove => {
+            REM_DT_IDX => {
                 add_rem_set.insert(old.p.clone());
                 let maybe_move_match = add_hash_idxs.get(&old.md5);
                 if maybe_move_match.is_some() {
                     let update_idx = maybe_move_match.unwrap();
-                    let new_path = new_entry.diffs[*update_idx].p.clone();
-                    new_entry.diffs[*update_idx].diff_type = diff::DiffType::Ignore;
+                    let new_path = new_entry.diffs[ADD_DT_IDX][*update_idx].p.clone();
                     if moved_paths.iter().find(|el|{ old.p.starts_with(el) }).is_none() {
-                        new_entry.diffs[*update_idx] = diff::CDirEntryDiff{
-                            p: old.p.clone(),
-                            t_diff: TDiff { s_diff: 0, ns_diff: 0 },
-                        
-                            files_here: 0,
-                            files_below: 0,
-                            dirs_here: 0,
-                            dirs_below: 0,
-                            size_here: 0,
-                            size_below: 0,
-                            
-                            diff_type: diff::DiffType::MoveDir,
-                            files: vec![],
-                            symlinks: vec![],
-                        };
+                        // TODO: Make it clearer that setting a "default" PathBuf here marks it as ignored
+                        new_entry.diffs[ADD_DT_IDX][*update_idx].p = PathBuf::new();
                         new_entry.move_to_paths.insert(old.p.clone(), new_path.to_path_buf());
                         moved_paths.push(old.p.to_path_buf());
                     }
@@ -188,10 +159,8 @@ pub fn diff_saves(mut original_file: DiffFile, o: Vec<CDirEntry>, n: Vec<CDirEnt
                     ni += 1;
                     continue;
                 }
-                remove_hash_idxs.insert(old.md5, new_entry.diffs.len());
-                new_entry.diffs.push(CDirEntryDiff{
-                    diff_type: DiffType::Remove,
-                    
+                remove_hash_idxs.insert(old.md5, new_entry.diffs[REM_DT_IDX].len());
+                new_entry.diffs[REM_DT_IDX].push(CDirEntryDiff{
                     p: old.p.clone(),
                     t_diff: get_t_diff_from_md(old.md, true),
                 
@@ -206,13 +175,13 @@ pub fn diff_saves(mut original_file: DiffFile, o: Vec<CDirEntry>, n: Vec<CDirEnt
                     symlinks: get_file_diffs(old.symlinks.to_vec(), Vec::new()),
                 });
             },
-            DiffType::Modify => {
+            MOD_DT_IDX => {
                 let maybe_modified_dir_diff = get_maybe_modified_dir_diff(old.clone(), new.clone());
                 match maybe_modified_dir_diff {
                     Some(d) => {
                         diff_passes_threshold = d.size_here.abs() >= min_diff_bytes as i64;
                         if diff_passes_threshold {
-                            new_entry.diffs.push(d);
+                            new_entry.diffs[MOD_DT_IDX].push(d);
                         }
                     },
                     None => {}
@@ -226,8 +195,10 @@ pub fn diff_saves(mut original_file: DiffFile, o: Vec<CDirEntry>, n: Vec<CDirEnt
     }
 
     // Apply filter given `-md` argument
-    new_entry.diffs = new_entry.diffs.into_iter().filter(|it| {
-        return it.diff_type != DiffType::Ignore && (it.diff_type == DiffType::MoveDir || (it.size_here + it.size_below).abs() >= min_diff_bytes as i64)}).collect();
+    for i in 0..new_entry.diffs.len() {
+        new_entry.diffs[i] = new_entry.diffs[i].clone().into_iter().filter(|it| {
+        return !ignore_dir_entry(it) && (it.size_here + it.size_below).abs() >= min_diff_bytes as i64}).collect();
+    }
 
     let changed_caching = original_file.has_merged_diff != cache_merged_diffs;
     if changed_caching {
@@ -247,7 +218,11 @@ pub fn diff_saves(mut original_file: DiffFile, o: Vec<CDirEntry>, n: Vec<CDirEnt
         }
         original_file.has_merged_diff = cache_merged_diffs;
     }
-    if new_entry.diffs.len() > 0 {
+    let mut largest_num_diffs = new_entry.diffs[ADD_DT_IDX].len();
+    for i in 0..NUM_DT {
+        largest_num_diffs = new_entry.diffs[i].len()
+    }
+    if largest_num_diffs > 0 || new_entry.move_to_paths.len() > 0 {
         original_file.entries.push(new_entry);
         original_file.timestamps.push(SystemTime::now());
     }
@@ -265,8 +240,6 @@ fn get_maybe_modified_dir_diff(ent_o: CDirEntry, ent_n: CDirEntry) -> Option<CDi
     let t_diff_n = get_t_diff_from_md(ent_n.md, false);
     
     return Some(CDirEntryDiff {
-        diff_type: DiffType::Modify,
-        
         p: ent_n.p,
         t_diff: TDiff{
             s_diff: t_diff_n.s_diff - t_diff_o.s_diff,
@@ -299,13 +272,8 @@ fn get_t_diff_from_md(md: Option<SystemTime>, negate: bool) -> TDiff {
     return ret;
 }
 
-fn get_file_diffs(o: Vec<FileEntry>, n: Vec<FileEntry>) -> Vec<FileEntryDiff> {
-    let box_size: usize = if n.len() > o.len() {
-        n.len()
-    } else {
-        o.len()
-    };
-    let mut diffs: Vec<FileEntryDiff> = Vec::with_capacity(box_size);
+fn get_file_diffs(o: Vec<FileEntry>, n: Vec<FileEntry>) -> [Vec<FileEntryDiff>; NUM_DT] {
+    let mut diffs: [Vec<FileEntryDiff>; 3] = Default::default();
 
     let root_pb = OsString::from("/");
     let mut maybe_removed_path_idxs = HashMap::<OsString, usize>::new();
@@ -336,9 +304,7 @@ fn get_file_diffs(o: Vec<FileEntry>, n: Vec<FileEntry>) -> Vec<FileEntryDiff> {
             continue;
         } else if curr_o.is_none() {
             let ent_n = curr_n.clone().unwrap();
-            diffs.push(FileEntryDiff {
-                diff_type: DiffType::Add,
-
+            diffs[ADD_DT_IDX].push(FileEntryDiff {
                 bn: ent_n.bn,
                 t_diff: get_t_diff_from_md(ent_n.md, false),
                 sz: ent_n.sz as i128,
@@ -351,9 +317,7 @@ fn get_file_diffs(o: Vec<FileEntry>, n: Vec<FileEntry>) -> Vec<FileEntryDiff> {
         let ent_n = curr_n.clone().unwrap();
         
         if base_path_n != base_path_o {
-            diffs.push(FileEntryDiff {
-                diff_type: DiffType::Add,
-
+            diffs[ADD_DT_IDX].push(FileEntryDiff {
                 bn: ent_n.bn,
                 t_diff: get_t_diff_from_md(ent_n.md, false),
                 sz: ent_n.sz as i128,
@@ -372,7 +336,7 @@ fn get_file_diffs(o: Vec<FileEntry>, n: Vec<FileEntry>) -> Vec<FileEntryDiff> {
         // Modify (maybe)
         let maybe_modified_dir_diff = get_maybe_modified_file_diff(ent_o, ent_n);
         match maybe_modified_dir_diff {
-            Some(d) => {diffs.push(d)},
+            Some(d) => {diffs[MOD_DT_IDX].push(d)},
             None => {}
         }
 
@@ -383,9 +347,7 @@ fn get_file_diffs(o: Vec<FileEntry>, n: Vec<FileEntry>) -> Vec<FileEntryDiff> {
     // Add these entries as 'Removed'
     for tup in maybe_removed_path_idxs {
         let ent = &o[tup.1];
-        diffs.push(FileEntryDiff {
-            diff_type: DiffType::Remove,
-            
+        diffs[REM_DT_IDX].push(FileEntryDiff {
             bn: ent.bn.clone(),
             t_diff: get_t_diff_from_md(ent.md, true),
             sz: ent.sz as i128 * -1,
@@ -397,7 +359,7 @@ fn get_file_diffs(o: Vec<FileEntry>, n: Vec<FileEntry>) -> Vec<FileEntryDiff> {
 
 pub fn add_dir_diffs(df: &DiffFile, full_scan_entries: &Vec<CDirEntry>, start_idx: usize, end_idx: usize) -> DiffEntry {
     let mut ret = DiffEntry {
-        diffs: vec![],
+        diffs: Default::default(),
         move_to_paths: HashMap::new(),
     };
     
@@ -405,86 +367,83 @@ pub fn add_dir_diffs(df: &DiffFile, full_scan_entries: &Vec<CDirEntry>, start_id
     let mut rev_move_to_paths = HashMap::new();
     for i in start_idx..(end_idx + 1) {
         let mut curr = df.entries[i].clone();
-        let mut is_new_arr = vec![false; ret.diffs.len()];
-        is_new_arr.extend(vec![true; curr.diffs.len()]);
+        
+        let mut is_new_lookup: [Vec<bool>; 3] = Default::default();
+        for j in 0..NUM_DT {
+            is_new_lookup[j] = vec![false; ret.diffs[j].len()];
+            is_new_lookup[j].extend(vec![true; curr.diffs[j].len()]);
+        }
         
         let to_paths_dup = ret.move_to_paths.clone();
+        for da_idx in 0..curr.diffs[ADD_DT_IDX].len() {
+            let new_diff_path = &curr.diffs[ADD_DT_IDX][da_idx].p.clone();
 
-        for d_idx in 0..curr.diffs.len() {
-            let new_diff_type = &curr.diffs[d_idx].diff_type.clone();
-            let new_diff_path = &curr.diffs[d_idx].p.clone();
-            match new_diff_type {
-                DiffType::Add => 'add: {
-                    // 1. A -> B, ADD: A => MOV -> MOD(A), ADD(B) (dup of A w/ different path)
-                    let maybe_to_path = to_paths_dup.get(new_diff_path);
-                    if maybe_to_path.is_some() {
-                        let maybe_entry_idx = path_entry_lookup.get(new_diff_path);
-                        if maybe_entry_idx.is_none() {
-                            break 'add;
-                        }
-                        let old_a = &full_scan_entries[*maybe_entry_idx.unwrap()];
-                        ret.move_to_paths.remove(new_diff_path);
+            // 1. A -> B, ADD: A => MOV -> MOD(A), ADD(B) (dup of A w/ different path)
+            let maybe_to_path = to_paths_dup.get(new_diff_path);
+            if maybe_to_path.is_some() {
+                let maybe_entry_idx = path_entry_lookup.get(new_diff_path);
+                if maybe_entry_idx.is_none() {
+                    continue;
+                }
+                let old_a = &full_scan_entries[*maybe_entry_idx.unwrap()];
+                ret.move_to_paths.remove(new_diff_path);
 
-                        // MOD A
-                        let maybe_a_diff = get_maybe_modified_dir_diff(old_a.clone(), get_entry_from_dir_diff(curr.diffs[d_idx].clone()));
-                        if maybe_a_diff.is_some() {
-                            curr.diffs[d_idx] = maybe_a_diff.unwrap();
-                        }
-                        // ADD B
-                        let add_b = CDirEntryDiff{
-                            diff_type: DiffType::Add,
-                            
-                            p: maybe_to_path.unwrap().to_path_buf(),
-                            t_diff: get_t_diff_from_md(old_a.md, false),
-                        
-                            files_here: old_a.files_here,
-                            files_below: old_a.files_below,
-                            dirs_here: old_a.dirs_here,
-                            dirs_below: old_a.dirs_below,
-                            size_here: old_a.size_here as i64,
-                            size_below: old_a.size_below as i64,
-                        
-                            files: get_file_diffs(Vec::new(), old_a.files.to_vec(),),
-                            symlinks: get_file_diffs(Vec::new(), old_a.symlinks.to_vec()),
-                        };
-                        ret.diffs.push(add_b);
-                        is_new_arr.push(true);
-                        rev_move_to_paths.remove(maybe_to_path.unwrap());
-                    }
-                },
-                DiffType::Remove => 'rem: {
-                    // 2. A -> B, REM: B => MOV -> REM(B)
-                    let maybe_from_path = rev_move_to_paths.get(new_diff_path);
-                    if maybe_from_path.is_some() {
-                        let maybe_entry_idx = path_entry_lookup.get(maybe_from_path.unwrap());
-                        if maybe_entry_idx.is_none() {
-                            break 'rem;
-                        }
-                        ret.move_to_paths.remove(maybe_from_path.unwrap());
-                        let old_a = &full_scan_entries[*maybe_entry_idx.unwrap()];
-                        // REM A
-                        curr.diffs[d_idx] = CDirEntryDiff{
-                            diff_type: DiffType::Remove,
-                            
-                            p: old_a.p.clone(),
-                            t_diff: get_t_diff_from_md(old_a.md, true),
-                        
-                            files_here: old_a.files_here,
-                            files_below: old_a.files_below,
-                            dirs_here: old_a.dirs_here,
-                            dirs_below: old_a.dirs_below,
-                            size_here: old_a.size_here as i64 * -1,
-                            size_below: old_a.size_below as i64 * -1,
-                        
-                            files: get_file_diffs(old_a.files.to_vec(), Vec::new()),
-                            symlinks: get_file_diffs(old_a.symlinks.to_vec(), Vec::new()),
-                        };
-                        is_new_arr[d_idx] = true;
-                    }
-                    rev_move_to_paths.remove(new_diff_path);
-                },
-                _ => {}
+                // MOD A
+                let maybe_a_diff = get_maybe_modified_dir_diff(old_a.clone(), get_entry_from_dir_diff(curr.diffs[ADD_DT_IDX][da_idx].clone()));
+                if maybe_a_diff.is_some() {
+                    curr.diffs[MOD_DT_IDX][da_idx] = maybe_a_diff.unwrap();
+                }
+                // ADD B
+                let add_b = CDirEntryDiff{
+                    p: maybe_to_path.unwrap().to_path_buf(),
+                    t_diff: get_t_diff_from_md(old_a.md, false),
+                
+                    files_here: old_a.files_here,
+                    files_below: old_a.files_below,
+                    dirs_here: old_a.dirs_here,
+                    dirs_below: old_a.dirs_below,
+                    size_here: old_a.size_here as i64,
+                    size_below: old_a.size_below as i64,
+                
+                    files: get_file_diffs(Vec::new(), old_a.files.to_vec(),),
+                    symlinks: get_file_diffs(Vec::new(), old_a.symlinks.to_vec()),
+                };
+                ret.diffs[ADD_DT_IDX].push(add_b);
+                is_new_lookup[ADD_DT_IDX].push(true);
+                rev_move_to_paths.remove(maybe_to_path.unwrap());
             }
+        }
+
+        for dr_idx in 0..curr.diffs[REM_DT_IDX].len() {
+            let new_diff_path = &curr.diffs[REM_DT_IDX][dr_idx].p.clone();
+
+            // 2. A -> B, REM: B => MOV -> REM(B)
+            let maybe_from_path = rev_move_to_paths.get(new_diff_path);
+            if maybe_from_path.is_some() {
+                let maybe_entry_idx = path_entry_lookup.get(maybe_from_path.unwrap());
+                if maybe_entry_idx.is_none() {
+                    continue;
+                }
+                ret.move_to_paths.remove(maybe_from_path.unwrap());
+                let old_a = &full_scan_entries[*maybe_entry_idx.unwrap()];
+                // REM A
+                curr.diffs[REM_DT_IDX][dr_idx] = CDirEntryDiff{                        
+                    p: old_a.p.clone(),
+                    t_diff: get_t_diff_from_md(old_a.md, true),
+                
+                    files_here: old_a.files_here,
+                    files_below: old_a.files_below,
+                    dirs_here: old_a.dirs_here,
+                    dirs_below: old_a.dirs_below,
+                    size_here: old_a.size_here as i64 * -1,
+                    size_below: old_a.size_below as i64 * -1,
+                
+                    files: get_file_diffs(old_a.files.to_vec(), Vec::new()),
+                    symlinks: get_file_diffs(old_a.symlinks.to_vec(), Vec::new()),
+                };
+                is_new_lookup[REM_DT_IDX][dr_idx] = true;
+            }
+            rev_move_to_paths.remove(new_diff_path);
         }
         let curr_paths_copy: HashMap<PathBuf, PathBuf> = curr.move_to_paths.clone();
         let mut remove_set: HashSet<PathBuf> = HashSet::new();
@@ -502,59 +461,51 @@ pub fn add_dir_diffs(df: &DiffFile, full_scan_entries: &Vec<CDirEntry>, start_id
                 ret.move_to_paths.insert(old_from.to_path_buf(), new_to.to_path_buf());
             }
         });
-        let mut new_curr_diffs = Vec::with_capacity(curr.diffs.len());
+        // For A -> B -> C => A -> C, any diffs acting on B should be removed
+        let mut new_curr_diffs: [Vec<CDirEntryDiff>; NUM_DT] = Default::default();
         for j in 0..curr.diffs.len() {
-            if !remove_set.contains(&curr.diffs[j].p.to_path_buf()) {
-                new_curr_diffs.push(curr.diffs[j].clone());
+            for d in &curr.diffs[j] {
+                if !remove_set.contains(&d.p.to_path_buf()) {
+                    new_curr_diffs[j].push(d.clone());
+                }
             }
         }
         curr.diffs = new_curr_diffs;
 
-        ret.diffs.extend(curr.diffs);
+        for j in 0..NUM_DT {
+            ret.diffs[j].extend(curr.diffs[j].clone());
+        }
         ret.move_to_paths.extend(curr.move_to_paths.clone());
         let to_paths_iter = curr.move_to_paths.into_iter().map(|kv|{(kv.1, kv.0)});
         rev_move_to_paths.extend(to_paths_iter);
 
-        let mut idx_keys: Vec<(usize, CDirEntryDiff)> = ret.diffs.into_iter().enumerate().collect();
-        idx_keys.sort_by(|a, b| {
-            let path_cmp = a.1.p.cmp(&b.1.p);
-            if path_cmp == Ordering::Equal {
-                let rhs_newer = !is_new_arr[a.0] && is_new_arr[b.0];
-                if rhs_newer {
-                    return Ordering::Less;
+        for j in 0..NUM_DT {
+            let mut idx_keys: Vec<(usize, CDirEntryDiff)> = ret.diffs[j].clone().into_iter().enumerate().collect();
+            idx_keys.sort_by(|a, b| {
+                let path_cmp = a.1.p.cmp(&b.1.p);
+                if path_cmp == Ordering::Equal {
+                    let rhs_newer = !is_new_lookup[j][a.0] && is_new_lookup[j][b.0];
+                    if rhs_newer {
+                        return Ordering::Less;
+                    }
+                    return Ordering::Greater;
                 }
-                return Ordering::Greater;
-            }
-            return path_cmp;
-        });
-    
-        ret.diffs = idx_keys.iter().map(|(_, entry)| entry.to_owned() ).collect();
-        let new_len = merge_sorted_vec_duplicates::<CDirEntryDiff>(&mut ret.diffs, |a: &CDirEntryDiff, b: &CDirEntryDiff| {
-            return a.p == b.p;
-        }, merge_dir_diff);
-        if ret.diffs.len() > 0 {
-            ret.diffs.resize(new_len, ret.diffs[0].clone());
+                return path_cmp;
+            });
+            ret.diffs[j] = idx_keys.iter().map(|(_, entry)| entry.to_owned() ).collect();
         }
+        
+        merge_sorted_vec_duplicates::<CDirEntryDiff>(&mut ret.diffs, |a: &CDirEntryDiff, b: &CDirEntryDiff| {
+            return a.p.cmp(&b.p);
+        }, is_new_lookup, merge_dir_diff);
     }
 
     return ret;
 }
 
-fn merge_dir_diff(old: CDirEntryDiff, new: CDirEntryDiff) -> Option<CDirEntryDiff> {
-    if (old.diff_type == DiffType::Remove && new.diff_type == DiffType::Add) || 
-       (old.diff_type == DiffType::Add && new.diff_type == DiffType::Remove) {
-        if diffs_match_except_time(&old, &new) {
-            if new.diff_type == DiffType::Add {
-                return Some(new);
-            }
-            return None;
-        }
-    } else if new.diff_type != DiffType::Modify {
-        return Some(new);
-    }
-
-    return Some(CDirEntryDiff{
-        p: new.p,
+fn merge_dir_diff(old: &CDirEntryDiff, new: &CDirEntryDiff) -> CDirEntryDiff {
+    return CDirEntryDiff{
+        p: new.p.clone(),
         t_diff: TDiff{
             s_diff: old.t_diff.s_diff + new.t_diff.s_diff,
             ns_diff: old.t_diff.ns_diff + new.t_diff.ns_diff,
@@ -566,112 +517,123 @@ fn merge_dir_diff(old: CDirEntryDiff, new: CDirEntryDiff) -> Option<CDirEntryDif
         dirs_below: old.dirs_below + new.dirs_below,
         size_here: old.size_here + new.size_here,
         size_below: old.size_below + new.size_below,
+    
+        files: merge_file_types_diffs(&old.files, &new.files),
+        symlinks: merge_file_types_diffs(&old.symlinks, &new.symlinks),
+    };
+}
+
+fn merge_file_types_diffs(old: &[Vec<FileEntryDiff>; NUM_DT], new: &[Vec<FileEntryDiff>; NUM_DT]) -> [Vec<FileEntryDiff>; NUM_DT] {
+    let mut ret: [Vec<FileEntryDiff>; 3] = Default::default();
+    let mut is_new_lookup: [Vec::<bool>; NUM_DT] = Default::default();
+    for i in 0..NUM_DT {
+        is_new_lookup[i] = vec![false; old.len()];
+        is_new_lookup[i].extend(vec![true; new.len()]);
         
-        diff_type: new.diff_type,
-    
-        files: merge_file_diffs(old.files, new.files),
-        symlinks: merge_file_diffs(old.symlinks, new.symlinks),
-    });
-}
-
-fn diffs_match_except_time(old: &CDirEntryDiff, new: &CDirEntryDiff) -> bool {
-    return old.p == new.p 
-    && (old.files_here + old.files_below) == (new.files_here + new.files_below)
-    && (old.dirs_here + old.dirs_below) == (new.dirs_here + new.dirs_below)
-    && (old.size_here + old.size_below) + (new.size_here + new.size_below) == 0
-}
-
-fn merge_file_diffs(old: Vec<FileEntryDiff>, new: Vec<FileEntryDiff>) -> Vec<FileEntryDiff> {
-    let mut is_new_arr = vec![false; old.len()];
-    is_new_arr.extend(vec![true; new.len()]);
-    
-    let mut ret = [old, new].concat();
-    
-    let mut idx_keys: Vec<(usize, &FileEntryDiff)> = ret.iter().enumerate().collect();
-    idx_keys.sort_by(|a, b| {
-        let path_cmp = a.1.bn.cmp(&b.1.bn);
-        if path_cmp == Ordering::Equal {
-            let rhs_newer = !is_new_arr[a.0] && is_new_arr[b.0];
-            if rhs_newer {
-                return Ordering::Less;
+        ret[i] = [old[i].clone(), new[i].clone()].concat();
+        let mut idx_keys: Vec<(usize, &FileEntryDiff)> = ret[i].iter().enumerate().collect();
+        idx_keys.sort_by(|a, b| {
+            let path_cmp = a.1.bn.cmp(&b.1.bn);
+            if path_cmp == Ordering::Equal {
+                let rhs_newer = !is_new_lookup[i][a.0] && is_new_lookup[i][b.0];
+                if rhs_newer {
+                    return Ordering::Less;
+                }
+                return Ordering::Greater;
             }
-            return Ordering::Greater;
-        }
-        return path_cmp;
-    });
-
-    ret = idx_keys.into_iter().map(|(_, entry)| entry.to_owned() ).collect();
-    let new_len = merge_sorted_vec_duplicates::<FileEntryDiff>(&mut ret, |a: &FileEntryDiff, b: &FileEntryDiff| {
-        return a.bn == b.bn;
-    }, merge_file_diff);
-    if ret.len() > 0 {
-        ret.resize(new_len, ret[0].clone());
+            return path_cmp;
+        });
+        ret[i] = idx_keys.into_iter().map(|(_, entry)| entry.to_owned() ).collect();
     }
+
+    merge_sorted_vec_duplicates::<FileEntryDiff>(&mut ret, |a: &FileEntryDiff, b: &FileEntryDiff| {
+        return a.bn.cmp(&b.bn);
+    }, is_new_lookup, merge_file_diff);
 
     return ret;
 }
 
-fn merge_sorted_vec_duplicates<T: Clone>(arr: &mut Vec::<T>, is_dup: fn(a: &T, b: &T) -> bool, merge_elems: fn(old: T, new: T) -> Option<T>) -> usize {
-    if arr.len() == 0 {
-        return 0;
+fn merge_sorted_vec_duplicates<T: Clone>(add_rem_mod_arrays: &mut [Vec::<T>; 3], cmp: fn(a: &T, b: &T) -> Ordering, is_new_lookup: [Vec::<bool>; 3], merge_elems: fn(old: &T, new: &T) -> T) {
+    let mut all_arrs_zero = true;
+    for i in 0..add_rem_mod_arrays.len() {
+        if add_rem_mod_arrays[i].len() > 0 {
+            all_arrs_zero = false;
+            break;
+        }
     }
-    
-    let mut assign_idx = 0;
-    let mut look_idx = 0;
-    while look_idx < arr.len() {
-        let look_at = arr[look_idx].clone();
-        if (look_idx + 1) < arr.len() && is_dup(&look_at, &arr[look_idx + 1]) {
-            let next = arr[look_idx + 1].clone();
-            // Merge two elements INTO the assign idx
-            let maybe_elem = merge_elems(look_at, next);
-            if maybe_elem.is_some() {
-                arr[assign_idx] = maybe_elem.unwrap();
+    if all_arrs_zero {
+        return;
+    }
+
+    // SUBEQ ITEM MATCH: if (OLD:ADD && NEW:REM) -> SKIP else PUSH(NEW:*)
+    let mut ai = 0;
+    let mut ri = 0;
+    let mut adds_left = ai < add_rem_mod_arrays[ADD_DT_IDX].len();
+    let mut rems_left = ri < add_rem_mod_arrays[REM_DT_IDX].len();
+    let mut new_add_items = Vec::with_capacity(add_rem_mod_arrays[ADD_DT_IDX].len());
+    let mut new_rem_items = Vec::with_capacity(add_rem_mod_arrays[REM_DT_IDX].len());
+    while adds_left && rems_left {    
+        let add_item = add_rem_mod_arrays[ADD_DT_IDX][ai].clone();
+        let rem_item = add_rem_mod_arrays[REM_DT_IDX][ri].clone();
+
+        let ord = cmp(&add_item, &rem_item);
+        match ord {
+            Ordering::Less => {
+                new_add_items.push(add_item);
+                ri -= 1;
+            },
+            Ordering::Greater => {
+                new_rem_items.push(rem_item);
+                ai -= 1;
             }
-            look_idx += 1;
-            assign_idx -= 1;
-        } else {
-            // `skipped_elems` -> element at `assign_idx` was merged into a previous element and should be overriden
-            let skipped_elems = look_idx > assign_idx;
-            if skipped_elems {
-                arr[assign_idx] = arr[look_idx].clone();
+            Ordering::Equal => {
+                let is_add_new = is_new_lookup[ADD_DT_IDX][ai];
+                let is_rem_new = is_new_lookup[REM_DT_IDX][ri];
+                new_add_items.push(add_item);
+                if is_rem_new && !is_add_new {
+                    // Revert default "add new"
+                    new_add_items.pop();
+                } else if is_rem_new {
+                    new_rem_items.push(rem_item);
+                }
             }
         }
-        
-        assign_idx += 1;
-        look_idx += 1;
+        ai += 1;
+        ri += 1;
+
+        adds_left = ai < add_rem_mod_arrays[ADD_DT_IDX].len();
+        rems_left = ri < add_rem_mod_arrays[REM_DT_IDX].len();
     }
+    add_rem_mod_arrays[ADD_DT_IDX] = new_add_items;
+    add_rem_mod_arrays[REM_DT_IDX] = new_rem_items;
     
-    // `assign_idx` is the new array length, anything after it can be ignored
-    return assign_idx;
+    // if SUBSEQ_MATCH(a, b) -> MERGE else PUSH(a)
+    let mut new_mod_items: Vec<T> = Vec::with_capacity(add_rem_mod_arrays[MOD_DT_IDX].len());
+    for i in 0..add_rem_mod_arrays[MOD_DT_IDX].len() {
+        let a = &add_rem_mod_arrays[MOD_DT_IDX][i];
+        if (i + 1) < add_rem_mod_arrays[MOD_DT_IDX].len() {
+            let b = &add_rem_mod_arrays[MOD_DT_IDX][i + 1];
+            let is_next_equal = cmp(&a, &b) == Ordering::Equal;
+            if is_next_equal {
+                new_mod_items.push(merge_elems(a, b));
+                continue;
+            } 
+        }
+        new_mod_items.push(a.clone());
+    }
+    add_rem_mod_arrays[MOD_DT_IDX] = new_mod_items;
 }
 
-fn merge_file_diff(old: FileEntryDiff, new: FileEntryDiff) -> Option<FileEntryDiff> {
-    if (old.diff_type == DiffType::Remove && new.diff_type == DiffType::Add) ||
-       (old.diff_type == DiffType::Add && new.diff_type == DiffType::Remove) {
-        if file_diffs_match_except_time(&old, &new) {
-            if new.diff_type == DiffType::Add {
-                return Some(new);
-            }
-            return None
-        }
-    } else if new.diff_type != DiffType::Modify {
-        return Some(new);
-    }
+fn merge_file_diff(old: &FileEntryDiff, new: &FileEntryDiff) -> FileEntryDiff {
 
-    return Some(FileEntryDiff{
-        bn: new.bn,
+    return FileEntryDiff{
+        bn: new.bn.clone(),
         sz: old.sz + new.sz,
         t_diff: TDiff{
             s_diff: old.t_diff.s_diff + new.t_diff.s_diff,
             ns_diff: old.t_diff.ns_diff + new.t_diff.ns_diff,
         },
-        diff_type: new.diff_type,
-    });
-}
-
-fn file_diffs_match_except_time(old: &FileEntryDiff, new: &FileEntryDiff) -> bool {
-    return old.bn == new.bn
-    && old.sz == new.sz
+    };
 }
 
 fn get_maybe_modified_file_diff(ent_o: FileEntry, ent_n: FileEntry) -> Option<FileEntryDiff> {    
@@ -683,8 +645,6 @@ fn get_maybe_modified_file_diff(ent_o: FileEntry, ent_n: FileEntry) -> Option<Fi
     let t_diff_n = get_t_diff_from_md(ent_n.md, false);
     
     return Some(FileEntryDiff {
-        diff_type: DiffType::Modify,
-        
         bn: ent_n.bn,
         sz: ent_n.sz as i128 - ent_o.sz as i128,
         t_diff: TDiff{

@@ -1,14 +1,34 @@
 use crate::walk;
 use crate::utility;
 
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
-pub enum DiffType {
-    Add,
-    Remove,
-    Modify,
-    Ignore,
-    MoveDir,
-    // TODO: Add `MoveFile` type and add `md5` property to `FileEntry` to support it
+pub const NUM_DT: usize = 3;
+pub const ADD_DT_IDX: usize = 0;
+pub const REM_DT_IDX: usize = 1;
+pub const MOD_DT_IDX: usize = 2;
+
+pub fn ignore_file_entry(f: &FileEntryDiff) -> bool {
+    return f.bn.capacity() == 0;
+}
+
+pub fn ignore_dir_entry(d: &CDirEntryDiff) -> bool {
+    return d.p.capacity() == 0;
+}
+
+pub fn get_diff_type_shorthand(id: usize) -> String {
+    let mut ret = "???";
+    match id {
+        0 => {
+            ret = "ADD";
+        }
+        1 => {
+            ret = "REM";
+        }
+        2 => {
+            ret = "MOD";
+        }
+        _ => {}
+    }
+    return String::from(ret);
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
@@ -16,7 +36,6 @@ pub struct FileEntryDiff {
     pub bn: std::ffi::OsString,
     pub sz: i128,
     pub t_diff: TDiff,
-    pub diff_type: DiffType,
 }
 impl Default for FileEntryDiff {
     fn default() -> Self {
@@ -27,7 +46,6 @@ impl Default for FileEntryDiff {
                 s_diff: 0,
                 ns_diff: 0,
             },
-            diff_type: DiffType::Modify,
         }
     }
 }
@@ -46,7 +64,8 @@ pub struct DiffFile {
 }
 #[derive(serde::Serialize, serde::Deserialize, Default, Clone, Debug)]
 pub struct DiffEntry {
-    pub diffs: Vec<CDirEntryDiff>,
+    // 0 -> add, 1 -> rem, 2 -> mod
+    pub diffs: [Vec<CDirEntryDiff>; NUM_DT],
     pub move_to_paths: std::collections::HashMap<std::path::PathBuf, std::path::PathBuf>,
 }
 
@@ -61,64 +80,55 @@ pub struct CDirEntryDiff {
     pub dirs_below: usize,
     pub size_here: i64,
     pub size_below: i64,
-    
-    pub diff_type: DiffType,
 
-    pub files: Vec<FileEntryDiff>,
-    pub symlinks: Vec<FileEntryDiff>,
+    pub files: [Vec<FileEntryDiff>; NUM_DT],
+    pub symlinks: [Vec<FileEntryDiff>; NUM_DT]
 }
 
 pub fn add_diffs_to_items<I: Clone + std::fmt::Debug + PartialEq, D: Clone + std::fmt::Debug>(
     items: &mut Vec<I>, 
-    diffs: &mut Vec<D>, 
+    add_rem_mod_diffs: &mut [Vec<D>; NUM_DT], 
     items_sort: fn(a: &I, b: &I) -> std::cmp::Ordering,
     item_diff_match: fn(it: &I, d: &D) -> bool,
-    diff_adds_items: fn(d: &D) -> bool,
-    diff_removes_item: fn(d: &D) -> bool,
+    ignore_diff: fn(d: &D) -> bool,
     get_item_from_diff: fn(d: D) -> I,
     add_diff_to_item: fn(it: &mut I, d: D) -> (),
 ) -> std::io::Result<()> {
-    if items.len() == 0 || diffs.len() == 0 {
+    if items.len() == 0 || (add_rem_mod_diffs[ADD_DT_IDX].len() == 0 && add_rem_mod_diffs[REM_DT_IDX].len() == 0 && add_rem_mod_diffs[MOD_DT_IDX].len() == 0) {
         return Ok(());
     }
     
-    // Split diffs into: ADD and MODIFY/REMOVE
-    let mut add_items: Vec<I> = Vec::new();
-    let mut rem_diffs: Vec<D> = Vec::new();
-    let mut mod_diffs: Vec<D> = Vec::new();
-    for i in 0..diffs.len() {
-        if diff_adds_items(&diffs[i]) {     
-            let item_to_add = get_item_from_diff(diffs[i].clone());    
-            add_items.push(item_to_add);
-        } else if diff_removes_item(&diffs[i]) {
-            rem_diffs.push(diffs[i].clone());
-        } else {
-            mod_diffs.push(diffs[i].clone());
-        }
-    }
+    // Pre-filter diffs to ignore
+    add_rem_mod_diffs[ADD_DT_IDX].retain(|d|!ignore_diff(d));
+    add_rem_mod_diffs[REM_DT_IDX].retain(|d|!ignore_diff(d));
+    add_rem_mod_diffs[MOD_DT_IDX].retain(|d|!ignore_diff(d));
 
     // Resize the array to fit the ADD diffs
-    items.resize(items.len() + add_items.len() - rem_diffs.len(), items[items.len() - 1].clone()); 
+    // TODO: Figure out how to remove the clone() here...
+    let mut add_items: Vec<I> = add_rem_mod_diffs[ADD_DT_IDX].iter().map(|d|{get_item_from_diff(d.clone())}).collect();
+    items.resize(items.len() + add_items.len() - add_rem_mod_diffs[1].len(), items[items.len() - 1].clone()); 
     
     // Modify / Remove
     let mut look_idx = 0;
     let mut assign_idx = 0;
     let mut mod_diff_idx = 0;
     let mut rem_diff_idx = 0;
+    let rem_diffs_len = add_rem_mod_diffs[REM_DT_IDX].len();
+    let mod_diffs_len = add_rem_mod_diffs[MOD_DT_IDX].len();
     while look_idx < items.len() {
         if assign_idx < look_idx {
             items[assign_idx] = items[look_idx].clone();
         }
         let mut curr = items[look_idx].clone();
-        let modify = mod_diff_idx < mod_diffs.len() && item_diff_match(&curr, &mod_diffs[mod_diff_idx]);
-        let remove = rem_diff_idx < rem_diffs.len() && item_diff_match(&curr, &rem_diffs[rem_diff_idx]);
+        let modify = mod_diff_idx < mod_diffs_len && item_diff_match(&curr, &add_rem_mod_diffs[MOD_DT_IDX][mod_diff_idx]);
+        let remove = rem_diff_idx < rem_diffs_len && item_diff_match(&curr, &add_rem_mod_diffs[REM_DT_IDX][rem_diff_idx]);
         if remove {
             look_idx += 1;
             rem_diff_idx += 1;
             continue;
         }
         if modify {
-            add_diff_to_item(&mut curr, mod_diffs[mod_diff_idx].clone());
+            add_diff_to_item(&mut curr, add_rem_mod_diffs[MOD_DT_IDX][mod_diff_idx].clone());
             items[assign_idx] = curr;
             mod_diff_idx += 1;
         }
@@ -173,21 +183,19 @@ pub fn merge_dir_diff_to_entry(ent: &mut walk::CDirEntry, d: CDirEntryDiff) {
     ent.size_below += d.size_below;
 
     let mut files_vec = ent.files.to_vec();
-    _ = add_diffs_to_items::<walk::FileEntry, FileEntryDiff>(&mut files_vec, &mut d.files.to_vec(), 
+    _ = add_diffs_to_items::<walk::FileEntry, FileEntryDiff>(&mut files_vec, &mut d.files.clone(),
     |a, b|{return a.bn.cmp(&b.bn)}, 
     |it, d| {return it.bn == d.bn}, 
-    |d|{return d.diff_type == DiffType::Add}, 
-    |d|{return d.diff_type == DiffType::Remove}, 
+    ignore_file_entry,
     get_entry_from_file_diff, 
     merge_file_diff_to_entry);
     ent.files = files_vec;
 
     let mut symlinks_vec = ent.symlinks.to_vec();
-    _ = add_diffs_to_items::<walk::FileEntry, FileEntryDiff>(&mut symlinks_vec, &mut d.symlinks.to_vec(), 
+    _ = add_diffs_to_items::<walk::FileEntry, FileEntryDiff>(&mut symlinks_vec, &mut d.symlinks.clone(),
     |a, b|{return a.bn.cmp(&b.bn)}, 
-    |it, d| {return it.bn == d.bn}, 
-    |d|{return d.diff_type == DiffType::Add}, 
-    |d|{return d.diff_type == DiffType::Remove}, 
+    |it, d| {return it.bn == d.bn},
+    ignore_file_entry, 
     get_entry_from_file_diff, 
     merge_file_diff_to_entry);
     ent.symlinks = symlinks_vec;
@@ -226,11 +234,26 @@ pub fn get_entry_from_file_diff(d: FileEntryDiff) -> walk::FileEntry {
     }
 }
 
-pub fn get_f_entries_from_f_diffs(fs: Vec<FileEntryDiff>) -> Vec<walk::FileEntry> {
-    let mut ret = Vec::with_capacity(fs.len());
-    for f in fs {
-        ret.push(get_entry_from_file_diff(f))
+pub fn get_f_entries_from_f_diffs(fs: [Vec<FileEntryDiff>; NUM_DT]) -> Vec<walk::FileEntry> {
+    let mut cap = 0;
+    for f in &fs {
+        cap += f.len();
     }
+    let mut ret = Vec::with_capacity(cap);
+    for i in 0..fs.len() {
+        let da = fs[i].clone();
+        let mut nda = Vec::with_capacity(da.len());
+        for d in da {
+            nda.push(get_entry_from_file_diff(d))
+        }
+        ret.append(&mut nda);
+    }
+
+    // Files need to be re-sorted since we're just doing: concat(add, rem, mod)
+    ret.sort_by(|a, b| {
+        return a.bn.cmp(&b.bn);
+    });
+
     return ret;
 }
 

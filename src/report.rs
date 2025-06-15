@@ -1,5 +1,5 @@
 use std::{cmp::Ordering, fs::exists, io::Error, path::PathBuf};
-use crate::{diff::{self, DiffEntry}, save::{self, read_diff_file, read_save_file}, scan::add_combined_diffs, utility, walk::CDirEntry, Config};
+use crate::{diff::{get_diff_type_shorthand, DiffEntry, ADD_DT_IDX, MOD_DT_IDX, REM_DT_IDX}, save::{self, read_diff_file, read_save_file}, scan::add_combined_diffs, utility, walk::CDirEntry, Config};
 
 pub fn report_changes(target_path: PathBuf, output_path: PathBuf, cfg: Config) -> std::io::Result<()> {
     let root_path_hash = save::get_hash_from_root_path(&target_path);
@@ -20,7 +20,7 @@ pub fn report_changes(target_path: PathBuf, output_path: PathBuf, cfg: Config) -
         Err(e) => {return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to read entries from file: {}", e)))}
     }
 
-    let mut combined_diffs: DiffEntry;
+    let combined_diffs: DiffEntry;
     let diff_file = read_diff_file(&path_to_diff)?;
     let res: Result<DiffEntry, Error> = add_combined_diffs(&diff_file, &full_scan_entries, cfg.maybe_start_report_time, cfg.maybe_end_report_time);
     match res {
@@ -35,32 +35,45 @@ pub fn report_changes(target_path: PathBuf, output_path: PathBuf, cfg: Config) -
         return Ok(());
     }
 
-    combined_diffs.diffs.sort_by(|a, b| {
-        if (a.size_here + a.size_below) <= (b.size_here + b.size_below) {
+    let last_add_idx: i32 = combined_diffs.diffs[ADD_DT_IDX].len() as i32 - 1;
+    let last_rem_idx: i32 = last_add_idx + combined_diffs.diffs[REM_DT_IDX].len() as i32;
+    let mut all_diffs: Vec<_> = combined_diffs.diffs.concat().into_iter().enumerate().collect();
+    all_diffs.sort_by(|a, b| {
+        if (a.1.size_here + a.1.size_below) <= (b.1.size_here + b.1.size_below) {
             return Ordering::Greater
         }
         return Ordering::Less
     });
+    // Replace original index in each entry pair with the ADD, REM or MOD identifier
+    for i in 0..all_diffs.len() {
+        let d = &all_diffs[i];
+        if last_add_idx > -1 && d.0 <= last_add_idx as usize {
+            all_diffs[i].0 = ADD_DT_IDX;
+        } else if last_rem_idx > -1 && d.0 <= last_rem_idx as usize {
+            all_diffs[i].0 = REM_DT_IDX;
+        } else {
+            all_diffs[i].0 = MOD_DT_IDX;
+        }
+    }
 
-    let limit = combined_diffs.diffs.len();
+    let limit = all_diffs.len();
     let mut total: i64 = 0;
+    let mut found_first_negative_diff = false;
     for i in 0..limit {
-        let mut t = format!("{:?}",combined_diffs.diffs[i].diff_type).to_ascii_uppercase();
-        let _ = t.split_off(3);
-        if cfg.show_moved_files && combined_diffs.diffs[i].diff_type == diff::DiffType::MoveDir {
-            let maybe_to_path = combined_diffs.move_to_paths.get(&combined_diffs.diffs[i].p);
-            if maybe_to_path.is_some() {
-                println!("{}: {:?} -> {:?} ({})", t, combined_diffs.diffs[i].p, maybe_to_path.unwrap(), utility::get_shorthand_file_size(combined_diffs.diffs[i].size_here + combined_diffs.diffs[i].size_below));
-            } else {
-                println!("{}: {:?} -> ? ({})", t, combined_diffs.diffs[i].p, utility::get_shorthand_file_size(combined_diffs.diffs[i].size_here + combined_diffs.diffs[i].size_below));
+        let t = get_diff_type_shorthand(all_diffs[i].0);
+        if cfg.show_moved_files && !found_first_negative_diff && all_diffs[i].1.size_here + all_diffs[i].1.size_below < 0 {
+            found_first_negative_diff = true;
+            for kv in &combined_diffs.move_to_paths {
+                let from = kv.0;
+                let to = kv.1;
+                println!("MOV: {:?} -> {:?} ({})", from, to, utility::get_shorthand_file_size(0));
             }
+        }
+        if (all_diffs[i].1.size_here + all_diffs[i].1.size_below) == 0 {
             continue;
         }
-        if (combined_diffs.diffs[i].size_here + combined_diffs.diffs[i].size_below) == 0 {
-            continue;
-        }
-        println!("{}: {:?} ({})", t, combined_diffs.diffs[i].p, utility::get_shorthand_file_size(combined_diffs.diffs[i].size_here + combined_diffs.diffs[i].size_below));
-        total += combined_diffs.diffs[i].size_here + combined_diffs.diffs[i].size_below;
+        println!("{}: {:?} ({})", t, all_diffs[i].1.p, utility::get_shorthand_file_size(all_diffs[i].1.size_here + all_diffs[i].1.size_below));
+        total += all_diffs[i].1.size_here + all_diffs[i].1.size_below;
     }
     println!("Total change is: {}", utility::get_shorthand_file_size(total));
 

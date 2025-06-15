@@ -58,9 +58,7 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
     }
 
     let mut diff_file: DiffFile = DiffFile { has_merged_diff: true, timestamps: vec![], entries: vec![] };
-    let mut combined_diffs: DiffEntry = DiffEntry { diffs: vec![], move_to_paths: HashMap::new() };
-    let mut path_to_diff = output_path.clone();
-    path_to_diff.push(format!("{}_diffs", root_path_hash));
+    let mut combined_diffs: DiffEntry = DiffEntry { diffs: Default::default(), move_to_paths: HashMap::new() };
     let diff_exists = exists(&path_to_diff)?;
     if diff_exists {
         diff_file = read_diff_file(&path_to_diff)?;
@@ -75,37 +73,13 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
     }
 
     // TODO: This is VERY dumb, there should be a faster way to do this
-    let mut not_move_diffs: Vec<CDirEntryDiff> = combined_diffs.diffs.clone().into_iter().filter(|el| {
-        return el.diff_type != DiffType::MoveDir
-    }).collect();
-    let move_diffs: Vec<CDirEntryDiff> = combined_diffs.diffs.clone().into_iter().filter(|el| {
-        return el.diff_type == DiffType::MoveDir
-    }).collect();
-
-    let res = add_diffs_to_items::<CDirEntry, CDirEntryDiff>(&mut initial_scan, &mut not_move_diffs, |a, b| {
+    let res = add_diffs_to_items::<CDirEntry, CDirEntryDiff>(&mut initial_scan, &mut combined_diffs.diffs, |a, b| {
         return a.p.cmp(&b.p);
     }, |it, d| {
         return it.p == d.p;
-    }, |a| {a.diff_type == DiffType::Add}, |a| {a.diff_type == DiffType::Remove}, get_entry_from_dir_diff, merge_dir_diff_to_entry);
+    }, ignore_dir_entry, get_entry_from_dir_diff, merge_dir_diff_to_entry);
     if res.is_err() {
         return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("failed to add diffs to scan: {:?}", res.err())))
-    }
-
-    if move_diffs.len() > 0 {
-        let mut mvdi = 0;
-        for i in 0..initial_scan.len() {
-            if initial_scan[i].p == move_diffs[mvdi].p {
-                let maybe_to_path = combined_diffs.move_to_paths.get(&initial_scan[i].p);
-                if maybe_to_path.is_some() {
-                    initial_scan[i].p = maybe_to_path.unwrap().to_path_buf();
-                }
-                mvdi += 1;
-
-                if mvdi >= move_diffs.len() {
-                    break;
-                }
-            }
-        }
     }
 
     // Step above probably screwed up the order...
@@ -116,8 +90,10 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
     let num_scan_files = curr_scan[0].files_here + curr_scan[0].files_below;
     let num_scan_dirs = curr_scan[0].dirs_here + curr_scan[0].dirs_below + 1;
 
+    let entries_before = diff_file.entries.len();
     diff_file = diff_saves(diff_file, initial_scan, curr_scan, combined_diffs, min_diff_bytes, cache_merged_diffs);
-    if diff_file.entries.len() > 0 {
+    let new_entry_added = diff_file.entries.len() > entries_before;
+    if new_entry_added {
         let f  = File::create(path_to_diff)?;
         let writer = BufWriter::new(f);
         bincode::serialize_into(writer, &diff_file).expect("failed to seralise");
@@ -127,7 +103,7 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
 }
 
 pub fn add_combined_diffs(diff_file: &DiffFile, full_scan_entries: &Vec<CDirEntry>, maybe_start_diff_time: Option<SystemTime>, maybe_end_diff_time: Option<SystemTime>) -> std::io::Result<DiffEntry> {
-    let mut combined_diffs = DiffEntry { diffs: vec![], move_to_paths: HashMap::new() };
+    let mut combined_diffs = DiffEntry { diffs: Default::default(), move_to_paths: HashMap::new() };
     if diff_file.entries.len() == 0 {
         return Ok(combined_diffs);
     }
