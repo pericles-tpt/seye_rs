@@ -203,18 +203,13 @@ pub fn diff_saves(mut original_file: DiffFile, o: Vec<CDirEntry>, n: Vec<CDirEnt
     let changed_caching = original_file.has_merged_diff != cache_merged_diffs;
     if changed_caching {
         if cache_merged_diffs {
-            // 0 index should be cached entry...
-            let mut new_entries = vec![combined_diffs];
-            new_entries.append(&mut original_file.entries);
-            original_file.entries = new_entries;
-            
-            let mut new_timestamps = vec![SystemTime::UNIX_EPOCH];
-            new_timestamps.append(&mut original_file.timestamps);
-            original_file.timestamps = new_timestamps;
+            // LAST index should be cached entry...
+            original_file.entries.push(combined_diffs);
+            original_file.timestamps.push(SystemTime::UNIX_EPOCH);
         } else {
-            // Remove 0 index as cache entry
-            original_file.entries = original_file.entries.into_iter().skip(1).collect();
-            original_file.timestamps = original_file.timestamps.into_iter().skip(1).collect();
+            // Remove LAST index as cache entry
+            original_file.entries.pop();
+            original_file.timestamps.pop();
         }
         original_file.has_merged_diff = cache_merged_diffs;
     }
