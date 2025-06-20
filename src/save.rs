@@ -522,8 +522,8 @@ fn merge_file_types_diffs(old: &[Vec<FileEntryDiff>; NUM_DT], new: &[Vec<FileEnt
     let mut ret: [Vec<FileEntryDiff>; 3] = Default::default();
     let mut is_new_lookup: [Vec::<bool>; NUM_DT] = Default::default();
     for i in 0..NUM_DT {
-        is_new_lookup[i] = vec![false; old.len()];
-        is_new_lookup[i].extend(vec![true; new.len()]);
+        is_new_lookup[i] = vec![false; old[i].len()];
+        is_new_lookup[i].extend(vec![true; new[i].len()]);
         
         ret[i] = [old[i].clone(), new[i].clone()].concat();
         let mut idx_keys: Vec<(usize, &FileEntryDiff)> = ret[i].iter().enumerate().collect();
