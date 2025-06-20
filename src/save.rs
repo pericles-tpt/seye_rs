@@ -599,6 +599,13 @@ fn merge_sorted_vec_duplicates<T: Clone>(add_rem_mod_arrays: &mut [Vec::<T>; 3],
         adds_left = ai < add_rem_mod_arrays[ADD_DT_IDX].len();
         rems_left = ri < add_rem_mod_arrays[REM_DT_IDX].len();
     }
+    // Add any remaining items
+    for i in ai..add_rem_mod_arrays[ADD_DT_IDX].len() {
+        new_add_items.push(add_rem_mod_arrays[ADD_DT_IDX][i].clone());
+    }
+    for i in ri..add_rem_mod_arrays[REM_DT_IDX].len() {
+        new_rem_items.push(add_rem_mod_arrays[REM_DT_IDX][i].clone());
+    }
     add_rem_mod_arrays[ADD_DT_IDX] = new_add_items;
     add_rem_mod_arrays[REM_DT_IDX] = new_rem_items;
     
