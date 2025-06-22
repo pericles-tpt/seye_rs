@@ -87,10 +87,11 @@ pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, mi
     let num_scan_files = curr_scan[0].files_here + curr_scan[0].files_below;
     let num_scan_dirs = curr_scan[0].dirs_here + curr_scan[0].dirs_below + 1;
 
+    let cache_merged_diffs_changed = diff_file.has_merged_diff != cache_merged_diffs;
     let entries_before = diff_file.entries.len();
     diff_file = diff_saves(diff_file, initial_scan, curr_scan, combined_diffs, min_diff_bytes, cache_merged_diffs);
     let new_entry_added = diff_file.entries.len() > entries_before;
-    if new_entry_added {
+    if new_entry_added || cache_merged_diffs_changed {
         let f  = File::create(path_to_diff)?;
         let writer = BufWriter::new(f);
         bincode::serialize_into(writer, &diff_file).expect("failed to seralise");
