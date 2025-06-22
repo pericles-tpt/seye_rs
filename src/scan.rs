@@ -110,20 +110,17 @@ pub fn add_combined_diffs(diff_file: &DiffFile, full_scan_entries: &Vec<CDirEntr
         return Err(Error::new(std::io::ErrorKind::Other, "invalid diff file, entries.len() != timestamps.len()"));
     }
 
-    let is_diff_range_restricted = maybe_start_diff_time.is_some() || maybe_end_diff_time.is_some();
-    let mut start_diff_idx = 0;
-    if diff_file.has_merged_diff {
-        start_diff_idx = 1;
-        if !is_diff_range_restricted {
-            return Ok(diff_file.entries[0].clone());
-        }
-    }
     
     // Combine diffs
+    let is_diff_range_restricted = maybe_start_diff_time.is_some() || maybe_end_diff_time.is_some();
     let mut start_idx: i32 = -1;
     let mut end_idx: i32 = -1;
+    let mut end_range = diff_file.timestamps.len();
+    if diff_file.has_merged_diff {
+        end_range -= 1;
+    }
     if is_diff_range_restricted {
-        for i in start_diff_idx..diff_file.timestamps.len() {
+        for i in 0..end_range {
             let modified_at = diff_file.timestamps[i];
             if start_idx < 0 && modified_at >= maybe_start_diff_time.unwrap() {
                 start_idx = i as i32;
@@ -134,12 +131,15 @@ pub fn add_combined_diffs(diff_file: &DiffFile, full_scan_entries: &Vec<CDirEntr
         }
     }
     if start_idx < 0 {
-        start_idx = start_diff_idx as i32;
+        start_idx = 0;
     }
     if end_idx < 0 {
         end_idx = 0;
         if diff_file.entries.len() > 0 {
-            end_idx = (diff_file.entries.len() - 1) as i32;
+            end_idx = end_range as i32;
+        }
+    }
+
         }
     }
     combined_diffs = add_dir_diffs(&diff_file, &full_scan_entries, start_idx as usize, end_idx as usize);
