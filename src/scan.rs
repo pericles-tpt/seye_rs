@@ -140,6 +140,11 @@ pub fn add_combined_diffs(diff_file: &DiffFile, full_scan_entries: &Vec<CDirEntr
         }
     }
 
+    if diff_file.has_merged_diff {
+        let end_idx_at_combined_diff = end_idx as usize == diff_file.entries.len() - 1;
+        let combine_all_diffs = start_idx == 0 && end_idx_at_combined_diff;
+        if combine_all_diffs {
+            return Ok(diff_file.entries[diff_file.entries.len() - 1].clone());
         }
     }
     combined_diffs = add_dir_diffs(&diff_file, &full_scan_entries, start_idx as usize, end_idx as usize);
