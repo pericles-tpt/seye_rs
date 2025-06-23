@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, collections::{HashMap, HashSet}, ffi::OsString, fs::File, hash::{DefaultHasher, Hasher}, io::BufReader, os::unix::ffi::OsStrExt, path::PathBuf, time::{SystemTime, UNIX_EPOCH}, usize};
 use std::io;
-use crate::{diff::{get_entry_from_dir_diff, ignore_dir_entry, CDirEntryDiff, DiffEntry, DiffFile, FileEntryDiff, TDiff, ADD_DT_IDX, MOD_DT_IDX, NUM_DT, REM_DT_IDX}, walk::{CDirEntry, FileEntry}};
+use crate::{diff::{get_entry_from_dir_diff, ignore_dir_entry, CDirEntryDiff, DiffEntry, DiffFile, FileEntryDiff, TDiff, ADD_DT_IDX, MOD_DT_IDX, NUM_DT, REM_DT_IDX}, scan::add_combined_diffs, walk::{CDirEntry, FileEntry}};
 
 const _START_VECTOR_BYTES: u64 = 8;
 
@@ -200,26 +200,48 @@ pub fn diff_saves(mut original_file: DiffFile, o: Vec<CDirEntry>, n: Vec<CDirEnt
         return !ignore_dir_entry(it) && (it.size_here + it.size_below).abs() >= min_diff_bytes as i64}).collect();
     }
 
-    let changed_caching = original_file.has_merged_diff != cache_merged_diffs;
-    if changed_caching {
-        if cache_merged_diffs {
+    // Pop off existing combined diff (if it exists)
+    let mut combined_diff_entries = None;
+    if original_file.has_merged_diff {
+        combined_diff_entries = original_file.entries.pop();
+        original_file.timestamps.pop();
+    }
+
+    // Add new (non-empty) entry
+    let mut largest_num_diffs = 0;
+    for i in 0..NUM_DT {
+        let curr_num_diffs = new_entry.diffs[i].len();
+        if curr_num_diffs > largest_num_diffs {
+            largest_num_diffs = curr_num_diffs;
+        }
+    }
+    let new_entry_empty = largest_num_diffs == 0 && new_entry.move_to_paths.len() == 0;
+    if !new_entry_empty {
+        original_file.entries.push(new_entry.clone());
+        original_file.timestamps.push(SystemTime::now());
+    }
+    
+    // Push combined diff back on (maybe), `cache_merged_diffs` overrides whatever the file says
+    original_file.has_merged_diff = cache_merged_diffs;
+    if cache_merged_diffs {
+        let mut new_combined_diff = None;
+        if combined_diff_entries.is_some() {
+            new_combined_diff = Some(add_diffs(&o, vec![combined_diff_entries.unwrap(), new_entry]));
+        } else {
+            let maybe_combined = add_combined_diffs(&original_file, &o, None, None);
+            // TODO: Handle error
+            if maybe_combined.is_ok() {
+                new_combined_diff = Some(maybe_combined.unwrap());
+            }
+        }
+        
+        if new_combined_diff.is_some() {
             // LAST index should be cached entry...
-            original_file.entries.push(combined_diffs);
+            original_file.entries.push(new_combined_diff.unwrap());
             original_file.timestamps.push(SystemTime::UNIX_EPOCH);
         } else {
-            // Remove LAST index as cache entry
-            original_file.entries.pop();
-            original_file.timestamps.pop();
+            original_file.has_merged_diff = false;
         }
-        original_file.has_merged_diff = cache_merged_diffs;
-    }
-    let mut largest_num_diffs = new_entry.diffs[ADD_DT_IDX].len();
-    for i in 0..NUM_DT {
-        largest_num_diffs = new_entry.diffs[i].len()
-    }
-    if largest_num_diffs > 0 || new_entry.move_to_paths.len() > 0 {
-        original_file.entries.push(new_entry);
-        original_file.timestamps.push(SystemTime::now());
     }
 
     return original_file;
