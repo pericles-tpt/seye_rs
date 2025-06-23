@@ -374,7 +374,6 @@ fn get_file_diffs(o: Vec<FileEntry>, n: Vec<FileEntry>) -> [Vec<FileEntryDiff>; 
     return diffs;
 }
 
-// TODO: This is a *slightly* modified version of the above function, can probably be merged
 pub fn add_diffs(full_scan_entries: &Vec<CDirEntry>, diffs: Vec<DiffEntry>) -> DiffEntry {
     let mut ret = DiffEntry {
         diffs: Default::default(),
