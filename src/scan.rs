@@ -147,7 +147,7 @@ pub fn add_combined_diffs(diff_file: &DiffFile, full_scan_entries: &Vec<CDirEntr
             return Ok(diff_file.entries[diff_file.entries.len() - 1].clone());
         }
     }
-    combined_diffs = add_diffs(&full_scan_entries, diff_file.entries[start_idx as usize..(end_idx + 1) as usize].to_vec());
+    combined_diffs = add_diffs(&full_scan_entries, diff_file.entries[start_idx as usize..end_idx as usize].to_vec());
 
     return Ok(combined_diffs);
 }
