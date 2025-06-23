@@ -1,8 +1,8 @@
 use std::{collections::HashMap, fs::{exists, File}, io::{BufWriter, Error}, time::SystemTime};
 use rayon::{slice::ParallelSliceMut};
 
-use crate::{diff::{add_diffs_to_items, get_entry_from_dir_diff, ignore_dir_entry, merge_dir_diff_to_entry, CDirEntryDiff, DiffEntry, DiffFile}, save::get_hash_from_root_path, utility::collect_from_root};
-use crate::{save::{add_dir_diffs, diff_saves, read_diff_file, read_save_file}, walk::CDirEntry};
+use crate::{diff::{add_diffs_to_items, get_entry_from_dir_diff, ignore_dir_entry, merge_dir_diff_to_entry, CDirEntryDiff, DiffEntry, DiffFile}, save::{add_diffs, get_hash_from_root_path}, utility::collect_from_root};
+use crate::{save::{diff_saves, read_diff_file, read_save_file}, walk::CDirEntry};
 
 pub fn scan(target_path: std::path::PathBuf, output_path: std::path::PathBuf, min_diff_bytes: usize, num_threads: usize, thread_add_dir_limit: usize, cache_merged_diffs: bool) -> Result<(usize, usize), Error> {
     let root_path_hash = get_hash_from_root_path(&target_path);
@@ -147,7 +147,7 @@ pub fn add_combined_diffs(diff_file: &DiffFile, full_scan_entries: &Vec<CDirEntr
             return Ok(diff_file.entries[diff_file.entries.len() - 1].clone());
         }
     }
-    combined_diffs = add_dir_diffs(&diff_file, &full_scan_entries, start_idx as usize, end_idx as usize);
+    combined_diffs = add_diffs(&full_scan_entries, diff_file.entries[start_idx as usize..(end_idx + 1) as usize].to_vec());
 
     return Ok(combined_diffs);
 }

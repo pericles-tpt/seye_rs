@@ -374,17 +374,16 @@ fn get_file_diffs(o: Vec<FileEntry>, n: Vec<FileEntry>) -> [Vec<FileEntryDiff>; 
     return diffs;
 }
 
-pub fn add_dir_diffs(df: &DiffFile, full_scan_entries: &Vec<CDirEntry>, start_idx: usize, end_idx: usize) -> DiffEntry {
+// TODO: This is a *slightly* modified version of the above function, can probably be merged
+pub fn add_diffs(full_scan_entries: &Vec<CDirEntry>, diffs: Vec<DiffEntry>) -> DiffEntry {
     let mut ret = DiffEntry {
         diffs: Default::default(),
         move_to_paths: HashMap::new(),
     };
-    
+
     let path_entry_lookup: HashMap<PathBuf, usize> = full_scan_entries.clone().into_iter().enumerate().map(|p|{(p.1.p, p.0)}).collect();
     let mut rev_move_to_paths = HashMap::new();
-    for i in start_idx..(end_idx + 1) {
-        let mut curr = df.entries[i].clone();
-        
+    for mut curr in diffs {
         let mut is_new_lookup: [Vec<bool>; 3] = Default::default();
         for j in 0..NUM_DT {
             is_new_lookup[j] = vec![false; ret.diffs[j].len()];
